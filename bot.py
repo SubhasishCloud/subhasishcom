@@ -26,10 +26,10 @@ queue = asyncio.Queue()
 
 # --- YOUR DYNAMIC SETTINGS ---
 settings = {
-    "crf": 28,          # 26-28 is the sweet spot for HEVC (H.265) 200MB targets
+    "crf": 28,          
     "resolution": 720,
-    "audio": "aac",
-    "preset": "medium"  # slower = better compression, but takes longer
+    "audio": "libopus -b:a 160k -vbr on",  # <--- Changed to Opus at 160kbps with Variable Bitrate
+    "preset": "medium"  
 }
 
 # --- COMMANDS ---
@@ -102,8 +102,10 @@ async def worker():
 
 async def process_video(message, input_path):
     output_path = f"compressed_{os.path.basename(input_path)}"
-    if not output_path.endswith('.mp4'):
-         output_path = output_path.rsplit('.', 1)[0] + '.mp4'
+    
+    # NEW CODE: Force the output to be an MKV file to support Opus audio
+    if not output_path.endswith('.mkv'):
+         output_path = output_path.rsplit('.', 1)[0] + '.mkv'
 
     status_msg = await message.reply(f"⚙️ Compressing (CRF {settings['crf']}, {settings['preset']})... Check Putty logs.")
     logger.info(f"FFmpeg running for HEVC: {input_path}")
@@ -163,6 +165,30 @@ async def handle_direct_link(client, message: Message):
     if file_path:
         await queue.put((message, file_path, url))
         await message.reply(f"✅ Added to Queue. Position: {queue.qsize()}")
+
+  @app.on_message(filters.command("metadata") & (filters.me | filters.chat("YOUR_GROUP_ID_HERE")))
+async def check_metadata(client, message):
+    # Check if the user replied to a message
+    if not message.reply_to_message or not message.reply_to_message.video:
+        await message.reply("⚠️ Please reply to a video file with /metadata.")
+        return
+
+    vid = message.reply_to_message.video
+    
+    # Calculate size in Megabytes
+    size_mb = vid.file_size / (1024 * 1024) if vid.file_size else 0
+
+    # Build the metadata text
+    text = (
+        f"📊 **Video Metadata**\n\n"
+        f"**Name:** `{vid.file_name or 'Unknown'}`\n"
+        f"**Size:** `{size_mb:.2f} MB`\n"
+        f"**Resolution:** `{vid.width} x {vid.height}`\n"
+        f"**Duration:** `{vid.duration} seconds`\n"
+        f"**Mime Type:** `{vid.mime_type}`\n"
+    )
+    
+    await message.reply(text)
 
 # --- START ---
 if __name__ == "__main__":
