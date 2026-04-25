@@ -8,6 +8,8 @@ from bot.helper_funcs.download import get_graph_link
 from bot.config import Config
 from bot.localisation import Localisation
 
+QUEUE_MSG = "<b>Added To Queue... 🚦</b>\n<b>Please Be Patient, Your Compression Will Start Soon... 😊</b>"
+
 @bot_app.on_callback_query(filters.regex(r"^panel_(.*)"))
 async def panel_handler(client, cb):
     action, tid = cb.data.split("_")[1:3]
@@ -18,14 +20,18 @@ async def panel_handler(client, cb):
         await cb.message.edit("📝 Probing MediaInfo (No download)...")
         chunk_path = f"probe_{tid}.mkv"
         await user_app.download_media(task['msg'], file_name=chunk_path, limit=1) 
-        info = os.popen(f"mediainfo {chunk_path}").read()
+        raw_info = os.popen(f"mediainfo {chunk_path}").read()
+        
+        # Apply Emojis to Headers
+        formatted_info = raw_info.replace("General\n", "📄 General\n").replace("Video\n", "🎬 Video\n").replace("Audio\n", "🔊 Audio\n").replace("Text\n", "💬 Subtitle\n").replace("Menu\n", "📑 Menu\n")
         os.remove(chunk_path)
-        link = await get_graph_link(info)
-        await cb.message.edit(f"📊 **MediaInfo Link:** {link}", disable_web_page_preview=True)
+        
+        link = await get_graph_link(formatted_info, "Subhasish Encoder Mediainfo", "Subhasish Encoder")
+        await cb.message.edit(f"📊 **MediaInfo Link:**\n{link}", disable_web_page_preview=True)
 
     elif action == "all":
         await queue.put((task['msg'], task['name'], ["-map", "0"], cb.message))
-        await cb.message.edit(f"✅ Added to Queue (All Tracks).\n`{task['name']}`")
+        await cb.message.edit(QUEUE_MSG)
 
     elif action == "select":
         await cb.message.edit("⏳ Fetching Stream List...")
@@ -51,7 +57,7 @@ async def delthumb_cb(client, cb):
     if action == "yes":
         path = os.path.join(Config.THUMB_DIR, f"{cb.from_user.id}.jpg")
         if os.path.exists(path): os.remove(path)
-        await cb.message.edit(Localisation.THUMB_DELETED)
+        await cb.message.edit(Localisation.THUMB_REMOVED)
     else:
         await cb.message.edit("❌ Thumbnail deletion cancelled.")
 
@@ -59,9 +65,10 @@ async def delthumb_cb(client, cb):
 async def cancel_running_cb(client, cb):
     if not AppState.current_process:
         return await cb.answer("No active task.", show_alert=True)
+        
     btn = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Yes, Cancel Task", callback_data="confirm_cancel_yes"),
-         InlineKeyboardButton("❌ No, Continue", callback_data="confirm_cancel_no")]
+        [InlineKeyboardButton("Yes✅", callback_data="confirm_cancel_yes"),
+         InlineKeyboardButton("No ❌", callback_data="confirm_cancel_no")]
     ])
     await bot_app.send_message(cb.message.chat.id, Localisation.CANCEL_PROMPT, reply_markup=btn)
 

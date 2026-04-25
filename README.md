@@ -125,6 +125,7 @@ crf - ⚠️ Change CRF Value [Owner/Sudo Only]
 audio - ⚠️ Change Audio Settings [Owner/Sudo Only]
 resolution - ⚠️ Change Video Resolution [Owner/Sudo Only]
 codec - ⚠️ Your Codec Settings [Owner/Sudo Only]
+mediainfo - ⚠️ Get MediaInfo of a video [Owner/Sudo]
 setthumbnail - Reply to an image to save your custom thumbnail
 delthumbnail - Safely delete your custom thumbnail
 setvar - ⚠️ Change Config values live (e.g. /setvar CRF 26) [Owner]

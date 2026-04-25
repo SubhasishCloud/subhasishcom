@@ -1,18 +1,26 @@
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 from pyrogram import Client
 from bot.config import Config
 
-# Set up logging to save to bot.log for the /log command
+config_data = Config.load_config()
+os.makedirs(Config.THUMB_DIR, exist_ok=True)
+
+# --- HIJACKED FEATURE: ROTATING LOGS ---
 logging.basicConfig(
     level=logging.INFO, 
     format="%(asctime)s - [%(levelname)s] - %(message)s",
-    handlers=[logging.FileHandler("bot.log"), logging.StreamHandler()]
+    handlers=[
+        RotatingFileHandler(
+            "bot.log",
+            maxBytes=20000000, # 20MB Max Log Size
+            backupCount=5      # Keep 5 backups
+        ),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
-
-config_data = Config.load_config()
-os.makedirs(Config.THUMB_DIR, exist_ok=True)
 
 bot_app = Client(
     "bot_session", 

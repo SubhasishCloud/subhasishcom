@@ -1,30 +1,60 @@
 import os
 import sys
-# Ensure the root directory is in the path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+import json
 import asyncio
 import logging
+import shutil
 from pyrogram import idle
 from bot.__init__ import bot_app, user_app
 from bot.helper_funcs.ffmpeg import worker
+from bot.helper_funcs.utils import AppState
 
-# Explicitly import files so decorators are registered
-import bot.command
+import bot.commands
 import bot.plugins.incoming_message_fn
 import bot.plugins.call_back_button_handler
 import bot.plugins.status_message_fn
+
+# --- SILENCE PYROGRAM SPAM ---
+# This hijacks your old feature to keep logs clean and save Oracle storage!
+logging.getLogger("pyrogram").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
 async def start_hybrid():
     logger.info("Booting Bot Client...")
+    
+    # --- FFMPEG HEALTH CHECK ---
+    if not shutil.which("ffmpeg"):
+        logger.error("❌ FFMPEG library isn't installed! Compression will fail.")
+        logger.error("Please ensure you are running the bot via Docker-Compose.")
+    else:
+        logger.info("✅ FFMPEG is installed and ready.")
+        
     await bot_app.start()
+    
+    # --- FETCH BOT USERNAME DYNAMICALLY ---
+    me = await bot_app.get_me()
+    AppState.bot_username = me.username
+    logger.info(f"Bot Username detected: @{AppState.bot_username}")
+    
+    # --- SMART RESTART COMPLETION CHECK ---
+    if os.path.exists("restart.json"):
+        try:
+            with open("restart.json", "r") as f:
+                r_data = json.load(f)
+            await bot_app.edit_message_text(
+                chat_id=r_data["chat_id"],
+                message_id=r_data["message_id"],
+                text="✅ **Restarted successfully!**"
+            )
+        except Exception as e:
+            logger.error(f"Failed to edit restart message: {e}")
+        finally:
+            os.remove("restart.json")
     
     logger.info("Booting User Client (4GB Limit Bypass)...")
     await user_app.start()
     
-    # Start the FFmpeg Queue Worker
     asyncio.create_task(worker())
     
     logger.info("Gemini Modular Compressor is fully online!")

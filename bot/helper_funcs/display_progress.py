@@ -10,11 +10,11 @@ def time_formatter(ms):
     s, ms = divmod(int(ms), 1000)
     m, s = divmod(s, 60)
     h, m = divmod(m, 60)
-    return f"{h:02d}:{m:02d}:{s:02d}"
+    return f"{h:02d}h {m:02d}m {s:02d}s"
 
 def make_bar(percent):
     filled = int(percent / 5)
-    return "█" * filled + "░" * (20 - filled)
+    return "●" * filled + "○" * (20 - filled)
 
 async def progress_bar(current, total, ud_type, message, start_time, last_update):
     if time.time() - last_update[0] > 4:
@@ -22,7 +22,14 @@ async def progress_bar(current, total, ud_type, message, start_time, last_update
         speed = current / (now - start_time) if (now - start_time) > 0 else 0
         eta = (total - current) / speed if speed > 0 else 0
         percent = (current / total) * 100 if total > 0 else 0
-        text = f"**{ud_type}**\n`[{make_bar(percent)}] {percent:.1f}%`\n\n🚀 Speed: `{humanbytes(speed)}/s` | ETA: `{time_formatter(eta*1000)}`"
+ 
+        text = (
+            f"{ud_type}\n"
+            f"<code>[{make_bar(percent)}]</code> {percent:.1f}%\n\n"
+            f"⚡️ <b>ꜱᴘᴇᴇᴅ:</b> {humanbytes(speed)}/s\n"
+            f"⏰ <b>ᴇᴛᴀ:</b> {time_formatter(eta*1000)}\n"
+            f"📦 <b>sɪᴢᴇ:</b> {humanbytes(current)} / {humanbytes(total)}"
+        )
         try: 
             await message.edit(text)
             last_update[0] = now
