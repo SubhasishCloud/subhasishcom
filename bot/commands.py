@@ -3,6 +3,8 @@ import sys
 import io
 import time
 import json
+import random
+import asyncio
 import traceback
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -173,7 +175,6 @@ async def mediainfo_cmd(client, message):
         await user_app.download_media(message.reply_to_message, file_name=chunk_path, limit=1)
         raw_info = os.popen(f"mediainfo {chunk_path}").read()
         
-        # Add Beautiful Emojis to the MediaInfo output
         formatted_info = raw_info.replace("General\n", "📄 General\n").replace("Video\n", "🎬 Video\n").replace("Audio\n", "🔊 Audio\n").replace("Text\n", "💬 Subtitle\n").replace("Menu\n", "📑 Menu\n")
         os.remove(chunk_path)
         
@@ -210,6 +211,85 @@ async def del_thumb_cmd(client, message):
     ])
     await message.reply(Localisation.THUMB_WARNING, reply_markup=btn)
 
+# --- NEW HIJACKED FEATURE: RANDOM 30 SEC SAMPLE GENERATOR ---
+async def generate_sample_background(client, target_message, status_msg):
+    try:
+        # Step 1: Download Media (Max 4GB limit handled by user_app)
+        await status_msg.edit(Localisation.DOWNLOAD_START)
+        file_path = await user_app.download_media(target_message)
+        
+        if not file_path or not os.path.exists(file_path):
+            return await status_msg.edit(Localisation.FILE_NOT_FOUND)
+
+        await status_msg.edit(Localisation.SAMPLE_GENERATING)
+
+        # Step 2: Get Duration
+        duration_cmd = f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 '{file_path}'"
+        duration_output = os.popen(duration_cmd).read().strip()
+        
+        try:
+            total_duration = float(duration_output)
+        except:
+            total_duration = 0
+            
+        if total_duration < 35:
+            os.remove(file_path)
+            return await status_msg.edit("⚠️ Video is too short to generate a 30-second sample.")
+
+        # Step 3: Pick a Random Start Time (avoiding the very beginning and very end)
+        start_time = random.uniform(10, total_duration - 35)
+        
+        # Step 4: Cut exactly 30 seconds using Fast Seek
+        sample_out = f"Sample_{int(time.time())}.mkv"
+        cut_cmd = [
+            "ffmpeg", "-ss", str(start_time), "-i", file_path, 
+            "-t", "30", "-c", "copy", "-y", sample_out
+        ]
+        
+        process = await asyncio.create_subprocess_exec(*cut_cmd)
+        await process.communicate()
+
+        if not os.path.exists(sample_out):
+            os.remove(file_path)
+            return await status_msg.edit("⚠️ Failed to generate sample.")
+
+        # Step 5: Upload the Sample
+        await status_msg.edit(Localisation.UPLOAD_START)
+        caption = f"🎞 **Random 30s Sample**\n⏱ Cut from: `{time.strftime('%H:%M:%S', time.gmtime(start_time))}`\n\n<b>©ᴇɴᴄᴏᴅᴇᴅ Bʏ:</b> <b>@{AppState.bot_username}</b>"
+        
+        await client.send_document(
+            chat_id=status_msg.chat.id, 
+            document=sample_out, 
+            caption=caption,
+            force_document=True,
+            reply_to_message_id=target_message.id
+        )
+        
+        await status_msg.delete()
+        os.remove(file_path)
+        os.remove(sample_out)
+        
+    except Exception as e:
+        await status_msg.edit(f"❌ Sample Generation Error: {e}")
+        if 'file_path' in locals() and os.path.exists(file_path): os.remove(file_path)
+        if 'sample_out' in locals() and os.path.exists(sample_out): os.remove(sample_out)
+
+@bot_app.on_message(filters.command("samplegen"))
+async def samplegen_cmd(client, message):
+    if not is_sudo(message): 
+        return await message.reply(UNAUTH_MSG)
+        
+    if AppState.current_process or not queue.empty():
+        return await message.reply(Localisation.SAMPLE_BUSY)
+        
+    if not message.reply_to_message or not (message.reply_to_message.video or message.reply_to_message.document):
+        return await message.reply("⚠️ Please reply to a video or document to generate a sample.")
+        
+    msg = await message.reply("⏳ **Initializing Random Sample Generator...**")
+    
+    # Run the generation process in the background so it doesn't freeze the bot
+    asyncio.create_task(generate_sample_background(client, message.reply_to_message, msg))
+
 
 # ==========================================
 # 👑 OWNER ONLY COMMANDS (Strict Restriction)
@@ -242,7 +322,6 @@ async def setvar_cmd(client, message):
             
         _, k, v = message.text.split(maxsplit=2)
         
-        # Smart formatting for Arrays and Integers
         if k in ["AUTH_USERS"]: 
             v = json.loads(v) 
         elif v.isdigit() and k not in ["USER_SESSION_STRING"]: 
@@ -254,7 +333,6 @@ async def setvar_cmd(client, message):
     except Exception as e: 
         await message.reply(f"❌ **Error formatting variable:**\n{e}\n\n{help_text}")
 
-# --- HIJACKED FEATURE: EXCEED 4096 LIMIT DOCUMENT SAVER ---
 async def aexec(code, client, message):
     exec(f"async def __aexec(client, message): " + "".join(f"\n {l}" for l in code.split("\n")))
     return await locals()["__aexec"](client, message)
@@ -289,7 +367,6 @@ async def eval_handler(client, message):
     
     final_output = f"<b>EVAL</b>: <code>{cmd}</code>\n\n<b>OUTPUT</b>:\n<code>{evaluation.strip()}</code>\n"
 
-    # The Hijacked Logic: If it's too long, save it to a file!
     if len(final_output) > 4000:
         with open("eval.txt", "w+", encoding="utf8") as out_file:
             out_file.write(str(final_output))
@@ -310,7 +387,6 @@ async def restart_cmd(client, message):
         
     msg = await message.reply("🔄 **Restarting the server now...**")
     
-    # Safely store chat state to edit to "Restart Successful" after boot
     with open("restart.json", "w") as f:
         json.dump({"chat_id": msg.chat.id, "message_id": msg.id}, f)
         

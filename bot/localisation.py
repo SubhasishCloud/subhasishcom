@@ -43,3 +43,7 @@ class Localisation:
     THUMB_REMOVED = "✅ <b>Thumbnail Removed.</b>"
     THUMB_WARNING = "⚠️ Your existing thumbnail will be deleted. Are you sure?"
     QUEUE_CLEARED = "✅ <b>Successfully Cleared Queue...</b>"
+    
+    # --- SAMPLE GEN TEXTS ---
+    SAMPLE_BUSY = "⚠️ **Bot is Busy!**\nCannot generate a sample while a compression task is running or in queue."
+    SAMPLE_GENERATING = "✂️ **Generating Random 30-Second Sample...**\n*(This will take a moment depending on file size)*"
