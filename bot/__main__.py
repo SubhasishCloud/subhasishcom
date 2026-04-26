@@ -5,7 +5,7 @@ import asyncio
 import logging
 import shutil
 from pyrogram import idle
-from bot.__init__ import bot_app, user_app
+from bot.__init__ import bot_app, user_app, config_data
 from bot.helper_funcs.ffmpeg import worker
 from bot.helper_funcs.utils import AppState
 
@@ -45,8 +45,19 @@ async def start_hybrid():
         finally:
             os.remove("restart.json")
     
-    logger.info("Booting User Client (4GB Limit Bypass)...")
+    logger.info("Booting Upload Client...")
     await user_app.start()
+    
+    # --- DYNAMIC LIMIT CHECKER ---
+    # Correctly validates if the account can handle 4GB or 2GB uploads via MTProto
+    if config_data.get("USER_SESSION_STRING"):
+        me_user = await user_app.get_me()
+        AppState.is_premium = me_user.is_premium
+        status_text = "Premium (4GB Uploads)" if AppState.is_premium else "Free Session (2GB Uploads)"
+        logger.info(f"✅ Session Verified | Limit Status: {status_text}")
+    else:
+        AppState.is_premium = False
+        logger.info("✅ Bot Token Verified | Limit Status: Standard MTProto (2GB Uploads)")
     
     asyncio.create_task(worker())
     

@@ -16,11 +16,19 @@ async def incoming_file(client, message):
     
     # Check Authorization
     if not is_sudo(user_id):
-        # CRITICAL FIX: Properly using Pyrogram Enums for Group checks!
         if message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
             return await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_to_message_id=message.id)
         else:
             return await message.reply(UNAUTH_MSG)
+
+    # --- HIJACKED FEATURE: MIME-TYPE ARMOR ---
+    # Prevents downloading massive .zip, .pdf, or non-video documents
+    if message.document:
+        mime = message.document.mime_type or ""
+        if not mime.startswith("video/"):
+            ext = (message.document.file_name or "").split(".")[-1].lower()
+            if ext not in ["mp4", "mkv", "avi", "webm", "flv", "mov"]:
+                return await message.reply("⚠️ **Invalid File:** Please send a valid video file.", quote=True)
 
     tid = str(message.id)
     name = (message.video or message.document).file_name or "video.mp4"

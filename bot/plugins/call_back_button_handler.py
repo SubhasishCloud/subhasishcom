@@ -10,6 +10,25 @@ from bot.localisation import Localisation
 
 QUEUE_MSG = "<b>Added To Queue... 🚦</b>\n<b>Please Be Patient, Your Compression Will Start Soon... 😊</b>"
 
+def get_bsetting_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("API_ID", callback_data="bsetting_select_API_ID"),
+         InlineKeyboardButton("API_HASH", callback_data="bsetting_select_API_HASH")],
+        [InlineKeyboardButton("TG_BOT_TOKEN", callback_data="bsetting_select_TG_BOT_TOKEN"),
+         InlineKeyboardButton("OWNER_ID", callback_data="bsetting_select_OWNER_ID")],
+        [InlineKeyboardButton("LOG_CHANNEL", callback_data="bsetting_select_LOG_CHANNEL"),
+         InlineKeyboardButton("AUTH_USERS", callback_data="bsetting_select_AUTH_USERS")],
+        [InlineKeyboardButton("USER_SESSION_STRING", callback_data="bsetting_select_USER_SESSION_STRING")],
+        [InlineKeyboardButton("CRF", callback_data="bsetting_select_CRF"),
+         InlineKeyboardButton("PRESET", callback_data="bsetting_select_PRESET")],
+        [InlineKeyboardButton("RESOLUTION", callback_data="bsetting_select_RESOLUTION"),
+         InlineKeyboardButton("AUDIO_BITRATE", callback_data="bsetting_select_AUDIO_BITRATE")],
+        [InlineKeyboardButton("CODEC", callback_data="bsetting_select_CODEC"),
+         InlineKeyboardButton("WATERMARK", callback_data="bsetting_select_WATERMARK_TEXT")],
+        [InlineKeyboardButton("AS_DOCUMENT", callback_data="bsetting_toggle_AS_DOCUMENT")],
+        [InlineKeyboardButton("❌ Close", callback_data="bsetting_close")]
+    ])
+
 @bot_app.on_callback_query(filters.regex(r"^panel_(.*)"))
 async def panel_handler(client, cb):
     action, tid = cb.data.split("_")[1:3]
@@ -48,12 +67,27 @@ async def panel_handler(client, cb):
         await cb.message.delete()
         await bot_app.send_message(cb.message.chat.id, "Reply with indexes (e.g. 0,2,4):", reply_markup=ForceReply(selective=True))
 
-
 # --- INTERACTIVE BSETTING HANDLERS ---
 @bot_app.on_callback_query(filters.regex(r"^bsetting_(.*)"))
 async def bsetting_cb(client, cb):
     action = cb.matches[0].group(1)
     user_id = cb.from_user.id
+
+    # The Elite Dynamic Regex Toggle
+    if action.startswith("toggle_"):
+        key = action.replace("toggle_", "")
+        default_val = True if key == "AS_DOCUMENT" else False
+        current_val = config_data.get(key, default_val)
+        
+        config_data[key] = not current_val
+        Config.save_config(config_data)
+        
+        await cb.answer(f"✅ {key} instantly changed to {not current_val}!", show_alert=True)
+        await cb.message.edit(
+            f"**⚙️ Bot Settings Menu**\n✅ Successfully toggled `{key}` to `{not current_val}`\n*(Core system changes require a /restart to take full effect)*",
+            reply_markup=get_bsetting_menu()
+        )
+        return
 
     if action.startswith("select_"):
         key = action.replace("select_", "")
@@ -61,16 +95,15 @@ async def bsetting_cb(client, cb):
         
         sensitive_keys = ["USER_SESSION_STRING", "API_ID", "API_HASH", "TG_BOT_TOKEN", "OWNER_ID"]
         
-        if key in sensitive_keys:
-            current_val = "******** (Hidden for Security)"
-        else:
-            current_val = config_data.get(key, "Not Set")
+        if key in sensitive_keys: current_val = "******** (Hidden for Security)"
+        else: current_val = config_data.get(key, "Not Set")
 
-        btn = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Back", callback_data="bsetting_back"),
-             InlineKeyboardButton("❌ Close", callback_data="bsetting_close")]
-        ])
-        await cb.message.edit(f"📝 **Editing {key}**\n\n**Current Value:** `{current_val}`\n\n👇 **Send the new value as a normal message now.**", reply_markup=btn)
+        btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data="bsetting_back"), InlineKeyboardButton("❌ Close", callback_data="bsetting_close")]])
+        
+        if key == "WATERMARK_TEXT":
+            await cb.message.edit(f"📝 **Editing {key}**\n\n**Current Value:** `{current_val}`\n\n👇 **Send your Watermark text.**\n*(Type `None` to remove the watermark)*", reply_markup=btn)
+        else:
+            await cb.message.edit(f"📝 **Editing {key}**\n\n**Current Value:** `{current_val}`\n\n👇 **Send the new value as a normal message now.**", reply_markup=btn)
 
     elif action == "confirm_yes":
         if user_id not in AppState.bsetting_state or "pending_value" not in AppState.bsetting_state[user_id]:
@@ -82,25 +115,17 @@ async def bsetting_cb(client, cb):
 
         try:
             v = raw_val
-            
-            # --- EXPLICIT TYPE MAPPING ENGINE ---
-            if key == "AUTH_USERS": 
-                v = json.loads(v) 
-            # Safely cast ID numbers, but strictly EXCLUDE Strings like CRF, Preset, Session Strings
-            elif v.lstrip('-').isdigit() and key not in ["USER_SESSION_STRING", "API_HASH", "TG_BOT_TOKEN", "PRESET", "RESOLUTION", "AUDIO_BITRATE", "CODEC", "CRF"]: 
-                v = int(v)
-            elif key in ["USER_SESSION_STRING", "API_HASH", "TG_BOT_TOKEN", "CRF", "PRESET", "RESOLUTION", "AUDIO_BITRATE", "CODEC"]:
-                v = str(v)
+            if key == "AUTH_USERS": v = json.loads(v) 
+            elif key in ["API_ID", "OWNER_ID", "LOG_CHANNEL"]: v = int(v)
+            elif key in ["USER_SESSION_STRING", "API_HASH", "TG_BOT_TOKEN", "CRF", "PRESET", "RESOLUTION", "AUDIO_BITRATE", "CODEC", "WATERMARK_TEXT"]: v = str(v)
             
             config_data[key] = v
             Config.save_config(config_data)
             
-            if key in sensitive_keys:
-                await cb.message.edit(f"✅ **{key}** successfully securely stored.\n\n⚠️ **Type /restart to apply core changes.**")
-            else:
-                await cb.message.edit(f"✅ **{key}** successfully updated to `{v}`.\n\n⚠️ **Type /restart to apply.**")
+            if key in sensitive_keys: await cb.message.edit(f"✅ **{key}** successfully securely stored.\n\n⚠️ **Type /restart to apply core changes.**")
+            else: await cb.message.edit(f"✅ **{key}** successfully updated to `{v}`.\n\n⚠️ **Type /restart to apply.**")
         except Exception as e: 
-            await cb.message.edit(f"❌ **Error formatting variable:**\n{e}\n\nIf editing AUTH_USERS, make sure it looks like `[123, 456]`.")
+            await cb.message.edit(f"❌ **Error formatting variable:**\n{e}")
 
         del AppState.bsetting_state[user_id]
 
@@ -110,32 +135,14 @@ async def bsetting_cb(client, cb):
 
     elif action == "back" or action == "close":
         if user_id in AppState.bsetting_state: del AppState.bsetting_state[user_id]
+        if action == "close": return await cb.message.delete()
         
-        if action == "close":
-            return await cb.message.delete()
-            
-        btn = InlineKeyboardMarkup([
-            [InlineKeyboardButton("API_ID", callback_data="bsetting_select_API_ID"),
-             InlineKeyboardButton("API_HASH", callback_data="bsetting_select_API_HASH")],
-            [InlineKeyboardButton("TG_BOT_TOKEN", callback_data="bsetting_select_TG_BOT_TOKEN"),
-             InlineKeyboardButton("OWNER_ID", callback_data="bsetting_select_OWNER_ID")],
-            [InlineKeyboardButton("LOG_CHANNEL", callback_data="bsetting_select_LOG_CHANNEL"),
-             InlineKeyboardButton("AUTH_USERS", callback_data="bsetting_select_AUTH_USERS")],
-            [InlineKeyboardButton("USER_SESSION_STRING", callback_data="bsetting_select_USER_SESSION_STRING")],
-            [InlineKeyboardButton("CRF", callback_data="bsetting_select_CRF"),
-             InlineKeyboardButton("PRESET", callback_data="bsetting_select_PRESET")],
-            [InlineKeyboardButton("RESOLUTION", callback_data="bsetting_select_RESOLUTION"),
-             InlineKeyboardButton("AUDIO_BITRATE", callback_data="bsetting_select_AUDIO_BITRATE")],
-            [InlineKeyboardButton("CODEC", callback_data="bsetting_select_CODEC")],
-            [InlineKeyboardButton("❌ Close", callback_data="bsetting_close")]
-        ])
         help_text = (
             "**⚙️ Bot Settings Menu**\n"
             "Click a variable below to change its value interactively.\n"
             "*(Core system changes require a /restart to take full effect)*"
         )
-        await cb.message.edit(help_text, reply_markup=btn)
-
+        await cb.message.edit(help_text, reply_markup=get_bsetting_menu())
 
 # --- THUMBNAIL & CANCEL HANDLERS ---
 @bot_app.on_callback_query(filters.regex(r"^delthumb_(.*)"))
@@ -154,8 +161,7 @@ async def cancel_running_cb(client, cb):
         return await cb.answer("No active task.", show_alert=True)
         
     btn = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Yes✅", callback_data="confirm_cancel_yes"),
-         InlineKeyboardButton("No ❌", callback_data="confirm_cancel_no")]
+        [InlineKeyboardButton("Yes✅", callback_data="confirm_cancel_yes"), InlineKeyboardButton("No ❌", callback_data="confirm_cancel_no")]
     ])
     await bot_app.send_message(cb.message.chat.id, Localisation.CANCEL_PROMPT, reply_markup=btn)
 

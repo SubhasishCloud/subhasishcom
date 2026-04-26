@@ -6,7 +6,7 @@ import json
 import random
 import asyncio
 import traceback
-import speedtest
+import gc
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.__init__ import bot_app, user_app, config_data
@@ -48,7 +48,6 @@ async def ping_cmd(client, message):
     ping_ms = round((end_t - start_t) * 1000)
     await msg.edit(f"📶Pɪɴɢ = {ping_ms}ms\n⏰ **Uptime:** `{get_uptime()}`")
 
-# --- HIJACKED FEATURE: ADVANCED STATUS DASHBOARD ---
 @bot_app.on_message(filters.command("status"))
 async def status_cmd(client, message):
     cpu, mem, disk = get_sys_stats()
@@ -65,18 +64,28 @@ async def status_cmd(client, message):
         f"• **Network In:** `{humanbytes(recv)}`\n"
         f"• **Network Out:** `{humanbytes(sent)}`"
     )
-    await message.reply(text)
+    
+    msg = await message.reply(text)
+    
+    # Auto-Delete if no tasks are running to keep chat clean
+    if AppState.active_file_name == "None" and queue.qsize() == 0:
+        await asyncio.sleep(30)
+        try:
+            await msg.delete()
+        except: pass
 
 @bot_app.on_message(filters.command("settings"))
 async def settings_cmd(client, message):
     text = (
         "⚠️ **Current Ffmpeg Code Settings**\n"
         "The current settings will be added to your video file :\n\n"
-        f"**Codec :** `{config_data['CODEC']}`\n"
-        f"**Crf :** `{config_data['CRF']}`\n"
-        f"**Resolution :** `{config_data['RESOLUTION']}`\n"
-        f"**Preset :** `{config_data['PRESET']}`\n"
-        f"**Audio Bitrates :** `{config_data['AUDIO_BITRATE']}`"
+        f"**Codec :** `{config_data.get('CODEC', 'libx265')}`\n"
+        f"**Crf :** `{config_data.get('CRF', '28')}`\n"
+        f"**Resolution :** `{config_data.get('RESOLUTION', '820x480')}`\n"
+        f"**Preset :** `{config_data.get('PRESET', 'fast')}`\n"
+        f"**Audio Bitrates :** `{config_data.get('AUDIO_BITRATE', '96k')}`\n"
+        f"**Watermark :** `{config_data.get('WATERMARK_TEXT', 'None')}`\n"
+        f"**Upload As Document :** `{config_data.get('AS_DOCUMENT', True)}`"
     )
     await message.reply(text)
 
@@ -84,9 +93,7 @@ async def settings_cmd(client, message):
 @bot_app.on_message(filters.command("clear"))
 async def clear_cmd(client, message):
     if not is_sudo(message): return await message.reply(UNAUTH_MSG)
-    while not queue.empty():
-        queue.get_nowait()
-        queue.task_done()
+    while not queue.empty(): queue.get_nowait(); queue.task_done()
     await message.reply(Localisation.QUEUE_CLEARED)
 
 @bot_app.on_message(filters.command(["cancel", "stop"]))
@@ -206,64 +213,9 @@ async def samplegen_cmd(client, message):
     msg = await message.reply("⏳ **Initializing Random Sample Generator...**")
     asyncio.create_task(generate_sample_background(client, message.reply_to_message, msg))
 
-# --- HIJACKED FEATURE: SERVER SPEEDTEST ---
-def run_speedtest():
-    st = speedtest.Speedtest()
-    st.get_best_server()
-    st.download()
-    st.upload()
-    res = st.results.dict()
-    return res
-
-@bot_app.on_message(filters.command("speedtest"))
-async def speedtest_cmd(client, message):
-    if not is_sudo(message): return await message.reply(UNAUTH_MSG)
-    msg = await message.reply("⏳ **Running Server Speedtest...** *(This takes about 20 seconds)*")
-    try:
-        # Run in thread to prevent blocking the async loop
-        res = await asyncio.to_thread(run_speedtest)
-        d_speed = humanbytes(res['download'] / 8)
-        u_speed = humanbytes(res['upload'] / 8)
-        ping = res['ping']
-        
-        text = (
-            f"🚀 **Oracle Server Speedtest**\n\n"
-            f"🔻 **Download:** `{d_speed}/s`\n"
-            f"🔺 **Upload:** `{u_speed}/s`\n"
-            f"📶 **Ping:** `{ping} ms`\n"
-            f"🌍 **Server:** `{res['server']['name']}, {res['server']['country']}`"
-        )
-        await msg.edit(text)
-    except Exception as e:
-        await msg.edit(f"❌ **Speedtest Failed:** {e}")
-
-
 # ==========================================
 # 👑 OWNER ONLY COMMANDS
 # ==========================================
-
-# --- HIJACKED FEATURE: BROADCAST ---
-@bot_app.on_message(filters.command("broadcast") & filters.private)
-async def broadcast_cmd(client, message):
-    if not is_owner(message): return await message.reply(UNAUTH_MSG)
-    if len(message.command) < 2: return await message.reply("⚠️ Usage: `/broadcast Your message here`")
-    
-    b_msg = message.text.split(maxsplit=1)[1]
-    success = 0
-    failed = 0
-    
-    await message.reply(f"📣 **Broadcasting to {len(config_data['AUTH_USERS'])} users...**")
-    
-    for user_id in config_data['AUTH_USERS']:
-        try:
-            await bot_app.send_message(user_id, f"📣 **Announcement from Admin:**\n\n{b_msg}")
-            success += 1
-            await asyncio.sleep(0.5) # Prevent flood limits
-        except:
-            failed += 1
-            
-    await message.reply(f"✅ **Broadcast Complete!**\n\n🟢 **Success:** `{success}`\n🔴 **Failed:** `{failed}`")
-
 
 @bot_app.on_message(filters.command("bsetting") & filters.private)
 async def bsetting_cmd(client, message):
@@ -281,7 +233,9 @@ async def bsetting_cmd(client, message):
          InlineKeyboardButton("PRESET", callback_data="bsetting_select_PRESET")],
         [InlineKeyboardButton("RESOLUTION", callback_data="bsetting_select_RESOLUTION"),
          InlineKeyboardButton("AUDIO_BITRATE", callback_data="bsetting_select_AUDIO_BITRATE")],
-        [InlineKeyboardButton("CODEC", callback_data="bsetting_select_CODEC")],
+        [InlineKeyboardButton("CODEC", callback_data="bsetting_select_CODEC"),
+         InlineKeyboardButton("WATERMARK", callback_data="bsetting_select_WATERMARK_TEXT")],
+        [InlineKeyboardButton("AS_DOCUMENT", callback_data="bsetting_toggle_AS_DOCUMENT")], # Converted to a toggle
         [InlineKeyboardButton("❌ Close", callback_data="bsetting_close")]
     ])
     
@@ -346,6 +300,16 @@ async def eval_handler(client, message):
         await message.reply_document(document="eval.txt", caption=cmd[:100], disable_notification=True)
         os.remove("eval.txt"); await msg.delete()
     else: await msg.edit(final_output)
+
+# --- CLEAR LOCALS COMMAND ---
+@bot_app.on_message(filters.command("clearlocals"))
+async def clearlocals_cmd(client, message):
+    if not is_owner(message): return await message.reply(UNAUTH_MSG)
+    try:
+        gc.collect()
+        await message.reply("✅ **Local Execution Variables Cleared!**\nServer RAM has been optimized and flushed.")
+    except Exception as e:
+        await message.reply(f"❌ **Failed to clear locals:** {e}")
 
 @bot_app.on_message(filters.command("restart"))
 async def restart_cmd(client, message):

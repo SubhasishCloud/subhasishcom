@@ -7,7 +7,7 @@ from bot.config import Config
 config_data = Config.load_config()
 os.makedirs(Config.THUMB_DIR, exist_ok=True)
 
-# --- HIJACKED FEATURE: ROTATING LOGS ---
+# --- ROTATING LOGS ---
 logging.basicConfig(
     level=logging.INFO, 
     format="%(asctime)s - [%(levelname)s] - %(message)s",
@@ -22,6 +22,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Core Bot Token App (For UI and Menus)
 bot_app = Client(
     "bot_session", 
     api_id=config_data["API_ID"], 
@@ -29,8 +30,10 @@ bot_app = Client(
     bot_token=config_data["TG_BOT_TOKEN"]
 )
 
-# Use Session String if provided, otherwise default to local file session
+# --- SMART HYBRID FALLBACK (MTProto Native) ---
+# Bypasses 2GB limits if Premium Session exists. Falls back to MTProto 2GB Bot limits if empty.
 if config_data.get("USER_SESSION_STRING"):
+    logger.info("✅ User Session detected. Evaluating Account Tier limits...")
     user_app = Client(
         "user_session_string",
         session_string=config_data["USER_SESSION_STRING"],
@@ -38,8 +41,5 @@ if config_data.get("USER_SESSION_STRING"):
         api_hash=config_data["API_HASH"]
     )
 else:
-    user_app = Client(
-        "user_session", 
-        api_id=config_data["API_ID"], 
-        api_hash=config_data["API_HASH"]
-    )
+    logger.info("ℹ️ No USER_SESSION_STRING provided. Running securely on MTProto Bot Token (2.0 GB Upload/Download Limit).")
+    user_app = bot_app

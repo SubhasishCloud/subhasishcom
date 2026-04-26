@@ -1,6 +1,5 @@
 import asyncio
 import time
-import psutil
 from datetime import datetime, timezone, timedelta
 from bot.__init__ import bot_app, logger, config_data
 
@@ -14,6 +13,7 @@ class AppState:
     awaiting_index = {}
     bot_username = "Bot" 
     bsetting_state = {}  
+    is_premium = False # Tracks if the User Session can upload 4GB natively
 
 def get_readable_time(milliseconds: int) -> str:
     seconds, milliseconds = divmod(int(milliseconds), 1000)
@@ -40,14 +40,15 @@ async def send_log(msg_text: str):
         except Exception as e:
             logger.error(f"Failed to send log: {e}")
 
-# --- NEW HIJACKED FEATURE: HARDWARE TELEMETRY ---
 def get_sys_stats():
+    import psutil
     cpu = psutil.cpu_percent()
     mem = psutil.virtual_memory().percent
     disk = psutil.disk_usage('/').percent
     return cpu, mem, disk
 
 def get_network_io():
+    import psutil
     net = psutil.net_io_counters()
     sent = net.bytes_sent
     recv = net.bytes_recv
