@@ -86,7 +86,8 @@ async def bsetting_cb(client, cb):
             # --- EXPLICIT TYPE MAPPING ENGINE ---
             if key == "AUTH_USERS": 
                 v = json.loads(v) 
-            elif key in ["API_ID", "OWNER_ID", "LOG_CHANNEL"]: 
+            # Safely cast ID numbers, but strictly EXCLUDE Strings like CRF, Preset, Session Strings
+            elif v.lstrip('-').isdigit() and key not in ["USER_SESSION_STRING", "API_HASH", "TG_BOT_TOKEN", "PRESET", "RESOLUTION", "AUDIO_BITRATE", "CODEC", "CRF"]: 
                 v = int(v)
             elif key in ["USER_SESSION_STRING", "API_HASH", "TG_BOT_TOKEN", "CRF", "PRESET", "RESOLUTION", "AUDIO_BITRATE", "CODEC"]:
                 v = str(v)
@@ -134,6 +135,7 @@ async def bsetting_cb(client, cb):
             "*(Core system changes require a /restart to take full effect)*"
         )
         await cb.message.edit(help_text, reply_markup=btn)
+
 
 # --- THUMBNAIL & CANCEL HANDLERS ---
 @bot_app.on_callback_query(filters.regex(r"^delthumb_(.*)"))

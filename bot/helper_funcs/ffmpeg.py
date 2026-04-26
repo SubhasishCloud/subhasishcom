@@ -56,10 +56,18 @@ async def worker():
             await status_msg.edit(Localisation.COMPRESS_START)
             await send_log(f"**Compressing Video ...** \n\nProcess Started at {get_ist()}")
             
-            res = config_data['RESOLUTION'].lower().replace("x", ":")
+            # --- THE ULTIMATE FAIL-SAFE: AGGRESSIVE STRING LOCKS ---
+            # Even if the JSON is corrupted with integers, str() intercepts and prevents the crash.
+            res = str(config_data.get('RESOLUTION', '820x480')).lower().replace("x", ":")
+            
             cmd = ["ffmpeg", "-i", file_path] + map_args + [
-                "-c:v", config_data["CODEC"], "-crf", str(config_data["CRF"]), "-preset", config_data["PRESET"],
-                "-vf", f"scale={res}", "-c:a", "libopus", "-b:a", config_data["AUDIO_BITRATE"], "-y", out
+                "-c:v", str(config_data.get("CODEC", "libx265")), 
+                "-crf", str(config_data.get("CRF", "28")), 
+                "-preset", str(config_data.get("PRESET", "fast")),
+                "-vf", f"scale={res}", 
+                "-c:a", "libopus", 
+                "-b:a", str(config_data.get("AUDIO_BITRATE", "96k")), 
+                "-y", out
             ]
             
             try:
@@ -91,7 +99,6 @@ async def worker():
                                 speed = curr_sec / elapsed if elapsed > 0 else 0
                                 eta = (duration_sec - curr_sec) / speed if speed > 0 else 0
                                 
-                                # --- INJECTED HARDWARE TELEMETRY ---
                                 cpu, mem, _ = get_sys_stats()
                                 
                                 text = (

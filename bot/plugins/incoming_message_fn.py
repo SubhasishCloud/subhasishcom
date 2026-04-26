@@ -1,10 +1,11 @@
 from pyrogram import filters
+from pyrogram.enums import ChatType
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.__init__ import bot_app, user_app, config_data
 from bot.helper_funcs.utils import AppState, queue
 
-UNAUTH_MSG = "**Opps You Need To Donate Some Amount To Use Meh...🐸👀**"
-QUEUE_MSG = "**Added To Queue... 🚦**\n**Please Be Patient, Your Compression Will Start Soon... 😊**"
+UNAUTH_MSG = "<b>Opps You Need To Donate Some Amount To Use Meh...🐸👀</b>"
+QUEUE_MSG = "<b>Added To Queue... 🚦</b>\n<b>Please Be Patient, Your Compression Will Start Soon... 😊</b>"
 
 def is_sudo(user_id):
     return user_id in config_data["AUTH_USERS"] or user_id == config_data["OWNER_ID"]
@@ -12,8 +13,11 @@ def is_sudo(user_id):
 @user_app.on_message((filters.video | filters.document))
 async def incoming_file(client, message):
     user_id = message.from_user.id if message.from_user else 0
+    
+    # Check Authorization
     if not is_sudo(user_id):
-        if message.chat.type in ["group", "supergroup"]:
+        # CRITICAL FIX: Properly using Pyrogram Enums for Group checks!
+        if message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
             return await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_to_message_id=message.id)
         else:
             return await message.reply(UNAUTH_MSG)
@@ -27,10 +31,11 @@ async def incoming_file(client, message):
         [InlineKeyboardButton("▶️ Compress All", callback_data=f"panel_all_{tid}")]
     ])
     
-    if message.chat.type in ["group", "supergroup"]:
+    if message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
         await bot_app.send_message(message.chat.id, f"📥 **File Received:** `{name}`\nChoose an action:", reply_to_message_id=message.id, reply_markup=btn)
     else:
         await message.reply(f"📥 **File Received:** `{name}`\nChoose an action:", reply_markup=btn)
+
 
 @bot_app.on_message(filters.reply)
 async def index_receiver(client, message):
@@ -42,5 +47,6 @@ async def index_receiver(client, message):
         task = AppState.pending_tasks.pop(tid)
         map_args = []
         for idx in message.text.split(','): map_args.extend(["-map", f"0:{idx.strip()}"])
+        
         await queue.put((task['msg'], task['name'], map_args, message))
         await message.reply(QUEUE_MSG)
