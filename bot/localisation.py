@@ -4,7 +4,7 @@ class Localisation:
         "<b>➥ Send Me Your Telegram Files.</b>\n"
         "<b>➥ I Will Encode Them One By One As I Have</b> <b>Queue Feature.</b>\n"
         "<b>➥ Just Send Me The Jpg/Pic & It Will Be Set As Your Custom Thumbnail.</b>\n"
-        "<b>➥ For ffmpeg Lovers [Owner/Sudo Users Only] - You Can Change CRF By</b> <code>/setvar CRF 28</code>\n\n"
+        "<b>➥ For ffmpeg Lovers [Owner/Sudo Users Only] - You Can Change Configs By</b> <code>/bsetting</code>\n\n"
         "🏷<b>Maintained By: @Subhasish_bot</b>"
     )
     
@@ -12,7 +12,7 @@ class Localisation:
         "🤖 **Bot Help & Basic Commands**\n\n"
         "Send me any video file (up to 4GB) and I will automatically compress it into a highly optimized HEVC format.\n\n"
         "**Basic Commands:**\n"
-        "• /status - Check the current compression queue\n"
+        "• /status - Check the current compression queue & Server Hardware\n"
         "• /ping - Check my uptime and latency\n"
         "• /setthumbnail - Reply to an image to set a custom cover\n"
         "• /delthumbnail - Safely delete your custom thumbnail"

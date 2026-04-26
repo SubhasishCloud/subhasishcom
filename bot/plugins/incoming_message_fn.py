@@ -21,8 +21,7 @@ async def incoming_file(client, message):
         else:
             return await message.reply(UNAUTH_MSG)
 
-    # --- HIJACKED FEATURE: MIME-TYPE ARMOR ---
-    # Prevents downloading massive .zip, .pdf, or non-video documents
+    # --- MIME-TYPE ARMOR ---
     if message.document:
         mime = message.document.mime_type or ""
         if not mime.startswith("video/"):
@@ -34,9 +33,10 @@ async def incoming_file(client, message):
     name = (message.video or message.document).file_name or "video.mp4"
     AppState.pending_tasks[tid] = {"msg": message, "name": name}
     
+    # --- UX UPGRADE: Renamed Compress All to Compress (Default) ---
     btn = InlineKeyboardMarkup([
         [InlineKeyboardButton("📊 MediaInfo", callback_data=f"panel_info_{tid}"), InlineKeyboardButton("✂️ Stream Select", callback_data=f"panel_select_{tid}")],
-        [InlineKeyboardButton("▶️ Compress All", callback_data=f"panel_all_{tid}")]
+        [InlineKeyboardButton("▶️ Compress (Default)", callback_data=f"panel_all_{tid}")]
     ])
     
     if message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:

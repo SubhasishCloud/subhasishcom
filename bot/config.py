@@ -11,7 +11,7 @@ class Config:
     OWNER_ID = 123456789
     LOG_CHANNEL = -100123456789
     AUTH_USERS = [123456789]
-    USER_SESSION_STRING = "" # Add your string session here dynamically via /setvar
+    USER_SESSION_STRING = "" 
     
     # FFmpeg Defaults
     CRF = "33.5"
@@ -19,6 +19,10 @@ class Config:
     AUDIO_BITRATE = "112k"
     PRESET = "fast"
     CODEC = "libx265"
+    
+    # Advanced Settings
+    WATERMARK_TEXT = "None"
+    AS_DOCUMENT = True
 
     @staticmethod
     def load_config():
@@ -28,7 +32,8 @@ class Config:
                 "OWNER_ID": Config.OWNER_ID, "LOG_CHANNEL": Config.LOG_CHANNEL, "AUTH_USERS": Config.AUTH_USERS,
                 "USER_SESSION_STRING": Config.USER_SESSION_STRING, "CRF": Config.CRF, 
                 "RESOLUTION": Config.RESOLUTION, "AUDIO_BITRATE": Config.AUDIO_BITRATE, 
-                "PRESET": Config.PRESET, "CODEC": Config.CODEC
+                "PRESET": Config.PRESET, "CODEC": Config.CODEC,
+                "WATERMARK_TEXT": Config.WATERMARK_TEXT, "AS_DOCUMENT": Config.AS_DOCUMENT
             }
             with open(Config.CONFIG_FILE, "w") as f: json.dump(default, f, indent=4)
             return default

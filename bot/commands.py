@@ -13,7 +13,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.__init__ import bot_app, user_app, config_data
 from bot.config import Config
 from bot.localisation import Localisation
-from bot.helper_funcs.utils import AppState, queue, START_TIME, get_readable_time, send_log, get_sys_stats, get_network_io
+from bot.helper_funcs.utils import AppState, queue, START_TIME, get_readable_time, send_log
 from bot.helper_funcs.download import get_graph_link
 from bot.helper_funcs.display_progress import humanbytes
 
@@ -51,30 +51,9 @@ async def ping_cmd(client, message):
     ping_ms = round((end_t - start_t) * 1000)
     await msg.edit(f"📶Pɪɴɢ = {ping_ms}ms\n⏰ **Uptime:** `{get_uptime()}`")
 
-@bot_app.on_message(filters.command("status"))
-async def status_cmd(client, message):
-    cpu, mem, disk = get_sys_stats()
-    sent, recv = get_network_io()
-    
-    text = (
-        f"📊 **System Status & Telemetry**\n\n"
-        f"⚙️ **Currently Processing:** `{AppState.active_file_name}`\n"
-        f"📥 **Files in Queue:** `{queue.qsize()}`\n\n"
-        f"**🖥 Hardware Info:**\n"
-        f"• **CPU Usage:** `{cpu}%`\n"
-        f"• **RAM Usage:** `{mem}%`\n"
-        f"• **Disk Usage:** `{disk}%`\n"
-        f"• **Network In:** `{humanbytes(recv)}`\n"
-        f"• **Network Out:** `{humanbytes(sent)}`"
-    )
-    
-    msg = await message.reply(text)
-    
-    if AppState.active_file_name == "None" and queue.qsize() == 0:
-        await asyncio.sleep(30)
-        try: await msg.delete()
-        except: pass
-
+# ==========================================
+# 🔴 SUDO COMMANDS
+# ==========================================
 @bot_app.on_message(filters.command("settings"))
 async def settings_cmd(client, message):
     if not is_sudo(message): return await message.reply(UNAUTH_MSG)
@@ -91,9 +70,7 @@ async def settings_cmd(client, message):
     )
     await message.reply(text)
 
-# ==========================================
-# 🔴 SUDO COMMANDS
-# ==========================================
+# ---> RESTORED DIRECT SETTING COMMANDS <---
 async def update_setting(message, key, display_name):
     if not is_sudo(message): return await message.reply(UNAUTH_MSG)
     if len(message.command) < 2: return await message.reply(f"Current {display_name}: `{config_data[key]}`")
@@ -117,6 +94,7 @@ async def res_cmd(client, message): await update_setting(message, "RESOLUTION", 
 
 @bot_app.on_message(filters.command("codec"))
 async def codec_cmd(client, message): await update_setting(message, "CODEC", "codec")
+# ------------------------------------------
 
 @bot_app.on_message(filters.command("clear"))
 async def clear_cmd(client, message):
@@ -241,7 +219,6 @@ async def samplegen_cmd(client, message):
     msg = await message.reply("⏳ **Initializing Random Sample Generator...**")
     asyncio.create_task(generate_sample_background(client, message.reply_to_message, msg))
 
-# --- HIJACKED FEATURE: SERVER SPEEDTEST ---
 def run_speedtest():
     st = speedtest.Speedtest()
     st.get_best_server()
