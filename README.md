@@ -116,7 +116,7 @@ sudo docker image prune -a
 ```
 start - Start The Bot 🤖
 ping - Check Bot's Up Time ⏰
-status - Check the active compression and queue
+status - Check the active compression, queue, and server Hardware
 clear - Clear Your Queued Tasks 🔫
 help - For Getting Help 🤔
 settings - ⚠️ Check Current Ffmpeg Code Settings [Owner/Sudo Only]
@@ -126,13 +126,16 @@ audio - ⚠️ Change Audio Settings [Owner/Sudo Only]
 resolution - ⚠️ Change Video Resolution [Owner/Sudo Only]
 codec - ⚠️ Your Codec Settings [Owner/Sudo Only]
 mediainfo - ⚠️ Get MediaInfo of a video [Owner/Sudo]
+samplegen - ⚠️ Generate a random 30sec preview sample [Owner/Sudo]
 setthumbnail - Reply to an image to save your custom thumbnail
 delthumbnail - Safely delete your custom thumbnail
-setvar - ⚠️ Change Config values live (e.g. /setvar CRF 26) [Owner]
+bsetting - ⚠️ Change Bot Config values live [Owner]
 exec - ⚠️ Execution [Owner/Sudo Only]
 stop - ⚠️ Stop The Current Task [Owner/Sudo Only]
 cancel - ⚠️ Cancel all tasks [Owner/Sudo Only]
 cancelall - ⚠️ Cancel all active and queued tasks [Owner/Sudo]
+speedtest - ⚠️ Test the Server's Download/Upload speed [Owner/Sudo]
+broadcast - ⚠️ Send a message to all authorized users [Owner]
 log - ⚠️ Get the Bot Log [Owner/Sudo Only]
 restart - ⚠️ Restart the Bot [Owner/Sudo Only]
 ```

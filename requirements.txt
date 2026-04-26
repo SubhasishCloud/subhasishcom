@@ -1,4 +1,5 @@
 pyrofork
 tgcrypto
-yt-dlp
 httpx
+psutil
+speedtest-cli

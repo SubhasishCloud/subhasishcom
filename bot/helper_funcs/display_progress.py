@@ -1,4 +1,5 @@
 import time
+from bot.helper_funcs.utils import get_sys_stats
 
 def humanbytes(size):
     if not size: return "0 B"
@@ -22,13 +23,17 @@ async def progress_bar(current, total, ud_type, message, start_time, last_update
         speed = current / (now - start_time) if (now - start_time) > 0 else 0
         eta = (total - current) / speed if speed > 0 else 0
         percent = (current / total) * 100 if total > 0 else 0
- 
+        
+        # Hardware Telemetry injected into progress string
+        cpu, mem, _ = get_sys_stats()
+        
         text = (
             f"{ud_type}\n"
             f"<code>[{make_bar(percent)}]</code> {percent:.1f}%\n\n"
             f"⚡️ <b>ꜱᴘᴇᴇᴅ:</b> {humanbytes(speed)}/s\n"
             f"⏰ <b>ᴇᴛᴀ:</b> {time_formatter(eta*1000)}\n"
-            f"📦 <b>sɪᴢᴇ:</b> {humanbytes(current)} / {humanbytes(total)}"
+            f"📦 <b>sɪᴢᴇ:</b> {humanbytes(current)} / {humanbytes(total)}\n\n"
+            f"🖥 <b>CPU:</b> {cpu}% | 💽 <b>RAM:</b> {mem}%"
         )
         try: 
             await message.edit(text)

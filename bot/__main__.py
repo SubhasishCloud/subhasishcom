@@ -14,30 +14,23 @@ import bot.plugins.incoming_message_fn
 import bot.plugins.call_back_button_handler
 import bot.plugins.status_message_fn
 
-# --- SILENCE PYROGRAM SPAM ---
-# This hijacks your old feature to keep logs clean and save Oracle storage!
 logging.getLogger("pyrogram").setLevel(logging.WARNING)
-
 logger = logging.getLogger(__name__)
 
 async def start_hybrid():
     logger.info("Booting Bot Client...")
     
-    # --- FFMPEG HEALTH CHECK ---
     if not shutil.which("ffmpeg"):
         logger.error("❌ FFMPEG library isn't installed! Compression will fail.")
-        logger.error("Please ensure you are running the bot via Docker-Compose.")
     else:
         logger.info("✅ FFMPEG is installed and ready.")
         
     await bot_app.start()
     
-    # --- FETCH BOT USERNAME DYNAMICALLY ---
     me = await bot_app.get_me()
     AppState.bot_username = me.username
     logger.info(f"Bot Username detected: @{AppState.bot_username}")
     
-    # --- SMART RESTART COMPLETION CHECK ---
     if os.path.exists("restart.json"):
         try:
             with open("restart.json", "r") as f:
@@ -57,7 +50,7 @@ async def start_hybrid():
     
     asyncio.create_task(worker())
     
-    logger.info("Gemini Modular Compressor is fully online!")
+    logger.info("Subhasish Encoder is fully online!")
     await idle()
     
     await bot_app.stop()

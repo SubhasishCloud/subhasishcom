@@ -2,10 +2,10 @@ import os
 import json
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
-from bot.__init__ import bot_app, user_app
+from bot.__init__ import bot_app, user_app, config_data
+from bot.config import Config
 from bot.helper_funcs.utils import AppState, queue
 from bot.helper_funcs.download import get_graph_link
-from bot.config import Config
 from bot.localisation import Localisation
 
 QUEUE_MSG = "<b>Added To Queue... 🚦</b>\n<b>Please Be Patient, Your Compression Will Start Soon... 😊</b>"
@@ -21,11 +21,8 @@ async def panel_handler(client, cb):
         chunk_path = f"probe_{tid}.mkv"
         await user_app.download_media(task['msg'], file_name=chunk_path, limit=1) 
         raw_info = os.popen(f"mediainfo {chunk_path}").read()
-        
-        # Apply Emojis to Headers
         formatted_info = raw_info.replace("General\n", "📄 General\n").replace("Video\n", "🎬 Video\n").replace("Audio\n", "🔊 Audio\n").replace("Text\n", "💬 Subtitle\n").replace("Menu\n", "📑 Menu\n")
         os.remove(chunk_path)
-        
         link = await get_graph_link(formatted_info, "Subhasish Encoder Mediainfo", "Subhasish Encoder")
         await cb.message.edit(f"📊 **MediaInfo Link:**\n{link}", disable_web_page_preview=True)
 
@@ -51,6 +48,94 @@ async def panel_handler(client, cb):
         await cb.message.delete()
         await bot_app.send_message(cb.message.chat.id, "Reply with indexes (e.g. 0,2,4):", reply_markup=ForceReply(selective=True))
 
+
+# --- INTERACTIVE BSETTING HANDLERS ---
+@bot_app.on_callback_query(filters.regex(r"^bsetting_(.*)"))
+async def bsetting_cb(client, cb):
+    action = cb.matches[0].group(1)
+    user_id = cb.from_user.id
+
+    if action.startswith("select_"):
+        key = action.replace("select_", "")
+        AppState.bsetting_state[user_id] = {"key": key, "step": "awaiting_value"}
+        
+        sensitive_keys = ["USER_SESSION_STRING", "API_ID", "API_HASH", "TG_BOT_TOKEN", "OWNER_ID"]
+        
+        if key in sensitive_keys:
+            current_val = "******** (Hidden for Security)"
+        else:
+            current_val = config_data.get(key, "Not Set")
+
+        btn = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Back", callback_data="bsetting_back"),
+             InlineKeyboardButton("❌ Close", callback_data="bsetting_close")]
+        ])
+        await cb.message.edit(f"📝 **Editing {key}**\n\n**Current Value:** `{current_val}`\n\n👇 **Send the new value as a normal message now.**", reply_markup=btn)
+
+    elif action == "confirm_yes":
+        if user_id not in AppState.bsetting_state or "pending_value" not in AppState.bsetting_state[user_id]:
+            return await cb.answer("Session expired.", show_alert=True)
+
+        key = AppState.bsetting_state[user_id]["key"]
+        raw_val = AppState.bsetting_state[user_id]["pending_value"]
+        sensitive_keys = ["USER_SESSION_STRING", "API_ID", "API_HASH", "TG_BOT_TOKEN", "OWNER_ID"]
+
+        try:
+            v = raw_val
+            
+            # --- EXPLICIT TYPE MAPPING ENGINE ---
+            if key == "AUTH_USERS": 
+                v = json.loads(v) 
+            elif key in ["API_ID", "OWNER_ID", "LOG_CHANNEL"]: 
+                v = int(v)
+            elif key in ["USER_SESSION_STRING", "API_HASH", "TG_BOT_TOKEN", "CRF", "PRESET", "RESOLUTION", "AUDIO_BITRATE", "CODEC"]:
+                v = str(v)
+            
+            config_data[key] = v
+            Config.save_config(config_data)
+            
+            if key in sensitive_keys:
+                await cb.message.edit(f"✅ **{key}** successfully securely stored.\n\n⚠️ **Type /restart to apply core changes.**")
+            else:
+                await cb.message.edit(f"✅ **{key}** successfully updated to `{v}`.\n\n⚠️ **Type /restart to apply.**")
+        except Exception as e: 
+            await cb.message.edit(f"❌ **Error formatting variable:**\n{e}\n\nIf editing AUTH_USERS, make sure it looks like `[123, 456]`.")
+
+        del AppState.bsetting_state[user_id]
+
+    elif action == "confirm_no":
+        if user_id in AppState.bsetting_state: del AppState.bsetting_state[user_id]
+        await cb.message.edit("❌ Update cancelled.")
+
+    elif action == "back" or action == "close":
+        if user_id in AppState.bsetting_state: del AppState.bsetting_state[user_id]
+        
+        if action == "close":
+            return await cb.message.delete()
+            
+        btn = InlineKeyboardMarkup([
+            [InlineKeyboardButton("API_ID", callback_data="bsetting_select_API_ID"),
+             InlineKeyboardButton("API_HASH", callback_data="bsetting_select_API_HASH")],
+            [InlineKeyboardButton("TG_BOT_TOKEN", callback_data="bsetting_select_TG_BOT_TOKEN"),
+             InlineKeyboardButton("OWNER_ID", callback_data="bsetting_select_OWNER_ID")],
+            [InlineKeyboardButton("LOG_CHANNEL", callback_data="bsetting_select_LOG_CHANNEL"),
+             InlineKeyboardButton("AUTH_USERS", callback_data="bsetting_select_AUTH_USERS")],
+            [InlineKeyboardButton("USER_SESSION_STRING", callback_data="bsetting_select_USER_SESSION_STRING")],
+            [InlineKeyboardButton("CRF", callback_data="bsetting_select_CRF"),
+             InlineKeyboardButton("PRESET", callback_data="bsetting_select_PRESET")],
+            [InlineKeyboardButton("RESOLUTION", callback_data="bsetting_select_RESOLUTION"),
+             InlineKeyboardButton("AUDIO_BITRATE", callback_data="bsetting_select_AUDIO_BITRATE")],
+            [InlineKeyboardButton("CODEC", callback_data="bsetting_select_CODEC")],
+            [InlineKeyboardButton("❌ Close", callback_data="bsetting_close")]
+        ])
+        help_text = (
+            "**⚙️ Bot Settings Menu**\n"
+            "Click a variable below to change its value interactively.\n"
+            "*(Core system changes require a /restart to take full effect)*"
+        )
+        await cb.message.edit(help_text, reply_markup=btn)
+
+# --- THUMBNAIL & CANCEL HANDLERS ---
 @bot_app.on_callback_query(filters.regex(r"^delthumb_(.*)"))
 async def delthumb_cb(client, cb):
     action = cb.matches[0].group(1)
