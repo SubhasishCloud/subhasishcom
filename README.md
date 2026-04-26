@@ -29,6 +29,10 @@ Built with advanced FFmpeg integration, `pyrofork` MTProto architecture, and a b
 ```
 sudo apt-get update && sudo apt-get upgrade -y
 ```
+- Only Select If There Is An Upgrade Left Inside Putty.
+```
+sudo apt-get dist-upgrade -y
+```
 ```
 sudo apt-get install docker.io docker-compose git -y
 ```
