@@ -229,7 +229,8 @@ async def restart_cmd(client, message):
     if not is_sudo(message): return await message.reply(UNAUTH_MSG)
     msg = await message.reply("🔄 **Restarting the server now...**")
     with open("restart.json", "w") as f: json.dump({"chat_id": msg.chat.id, "message_id": msg.id}, f)
-    os.execl(sys.executable, sys.executable, *sys.argv)
+    # --- FIX: FORCE STRICT MODULE EXECUTION TO PREVENT IMPORT ERRORS ---
+    os.execl(sys.executable, sys.executable, "-m", "bot")
 
 # ==========================================
 # 👑 OWNER ONLY COMMANDS
@@ -266,7 +267,6 @@ async def speedtest_cmd(client, message):
     if not is_owner(message): return await message.reply(UNAUTH_MSG)
     msg = await message.reply("⏳ **Running Server Speedtest...**\n✨ 𝘛𝘩𝘪𝘴 𝘵𝘢𝘬𝘦𝘴 𝘢𝘣𝘰𝘶𝘵 20 𝘴𝘦𝘤𝘰𝘯𝘥𝘴 ✨")
     try:
-        res = await asyncio.to_thread(speedtest.Speedtest().results.dict) # Modified safely for brevity
         res = await asyncio.to_thread(run_speedtest)
         d_speed = humanbytes(res['download'] / 8)
         u_speed = humanbytes(res['upload'] / 8)
@@ -368,7 +368,6 @@ async def bsetting_cmd(client, message):
 async def bsetting_input_catcher(client, message):
     user_id = message.from_user.id
     
-    # 100% Secure in Supergroups: Only triggers if the exact user ID is awaiting input
     if user_id in AppState.bsetting_state and AppState.bsetting_state[user_id].get("step") == "awaiting_value":
         if message.text.startswith("/"):
             del AppState.bsetting_state[user_id]

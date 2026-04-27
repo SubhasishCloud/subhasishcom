@@ -36,51 +36,58 @@ async def panel_handler(client, cb):
     if not task: return await cb.answer("Task Expired", show_alert=True)
 
     if action == "info":
-        # --- FIX: Clean, professional UI text ---
         await cb.message.edit("📝 Probing MediaInfo...")
         chunk_path = f"probe_{tid}.mkv"
         
-        # --- The secret 5MB Stream limit remains active in the background ---
-        with open(chunk_path, "wb") as f:
-            dl_size = 0
-            async for chunk in user_app.stream_media(task['msg']):
-                f.write(chunk)
-                dl_size += len(chunk)
-                if dl_size >= 5 * 1024 * 1024:  # 5MB Limit
-                    break
-                    
-        raw_info = os.popen(f"mediainfo {chunk_path}").read()
-        formatted_info = raw_info.replace("General\n", "📄 General\n").replace("Video\n", "🎬 Video\n").replace("Audio\n", "🔊 Audio\n").replace("Text\n", "💬 Subtitle\n").replace("Menu\n", "📑 Menu\n")
-        os.remove(chunk_path)
-        link = await get_graph_link(formatted_info, "Subhasish Encoder Mediainfo", "Subhasish Encoder")
-        await cb.message.edit(f"📊 **MediaInfo Link:**\n{link}", disable_web_page_preview=True)
+        # --- FIX: Robust Error Catching prevents the button from spinning infinitely ---
+        try:
+            with open(chunk_path, "wb") as f:
+                dl_size = 0
+                async for chunk in user_app.stream_media(task['msg']):
+                    f.write(chunk)
+                    dl_size += len(chunk)
+                    if dl_size >= 5 * 1024 * 1024:  # 5MB Limit
+                        break
+                        
+            raw_info = os.popen(f"mediainfo {chunk_path}").read()
+            formatted_info = raw_info.replace("General\n", "📄 General\n").replace("Video\n", "🎬 Video\n").replace("Audio\n", "🔊 Audio\n").replace("Text\n", "💬 Subtitle\n").replace("Menu\n", "📑 Menu\n")
+            
+            link = await get_graph_link(formatted_info, "Subhasish Encoder Mediainfo", "Subhasish Encoder")
+            await cb.message.edit(f"📊 **MediaInfo Link:**\n{link}", disable_web_page_preview=True)
+        except Exception as e:
+            await cb.message.edit(f"❌ **MediaInfo Error:** `{e}`")
+        finally:
+            if os.path.exists(chunk_path): os.remove(chunk_path)
 
     elif action == "all":
         await queue.put((task['msg'], task['name'], ["-map", "0"], cb.message))
         await cb.message.edit(QUEUE_MSG)
 
     elif action == "select":
-        # --- FIX: Clean, professional UI text ---
         await cb.message.edit("⏳ Fetching Stream List...")
         chunk_path = f"probe_{tid}.mkv"
         
-        # --- The secret 5MB Stream limit remains active in the background ---
-        with open(chunk_path, "wb") as f:
-            dl_size = 0
-            async for chunk in user_app.stream_media(task['msg']):
-                f.write(chunk)
-                dl_size += len(chunk)
-                if dl_size >= 5 * 1024 * 1024:  # 5MB Limit
-                    break
-                    
-        streams = os.popen(f"ffprobe -v error -show_entries stream=index,codec_type,codec_name:stream_tags=language -of json {chunk_path}").read()
-        os.remove(chunk_path)
-        data = json.loads(streams).get("streams", [])
-        txt = "**Available Streams:**\n"
-        for s in data:
-            txt += f"Index `{s['index']}`: {s['codec_type'].upper()} ({s.get('tags',{}).get('language','und')})\n"
-        btn = InlineKeyboardMarkup([[InlineKeyboardButton("✍️ Input Indexes", callback_data=f"panel_input_{tid}")]])
-        await cb.message.edit(txt, reply_markup=btn)
+        # --- FIX: Robust Error Catching prevents the button from spinning infinitely ---
+        try:
+            with open(chunk_path, "wb") as f:
+                dl_size = 0
+                async for chunk in user_app.stream_media(task['msg']):
+                    f.write(chunk)
+                    dl_size += len(chunk)
+                    if dl_size >= 5 * 1024 * 1024:  # 5MB Limit
+                        break
+                        
+            streams = os.popen(f"ffprobe -v error -show_entries stream=index,codec_type,codec_name:stream_tags=language -of json {chunk_path}").read()
+            data = json.loads(streams).get("streams", [])
+            txt = "**Available Streams:**\n"
+            for s in data:
+                txt += f"Index `{s['index']}`: {s['codec_type'].upper()} ({s.get('tags',{}).get('language','und')})\n"
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton("✍️ Input Indexes", callback_data=f"panel_input_{tid}")]])
+            await cb.message.edit(txt, reply_markup=btn)
+        except Exception as e:
+            await cb.message.edit(f"❌ **Stream Select Error:** `{e}`")
+        finally:
+            if os.path.exists(chunk_path): os.remove(chunk_path)
 
     elif action == "input":
         AppState.awaiting_index[cb.message.chat.id] = tid
