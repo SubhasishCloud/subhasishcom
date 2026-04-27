@@ -13,7 +13,7 @@ class AppState:
     awaiting_index = {}
     bot_username = "Bot" 
     bsetting_state = {}  
-    is_premium = False # Tracks if the User Session can upload 4GB natively
+    is_premium = False 
 
 def get_readable_time(milliseconds: int) -> str:
     seconds, milliseconds = divmod(int(milliseconds), 1000)
@@ -53,3 +53,35 @@ def get_network_io():
     sent = net.bytes_sent
     recv = net.bytes_recv
     return sent, recv
+
+# --- NEW: DATA CENTER & SIZE EXTRACTOR ---
+def get_file_info(message):
+    media = message.video or message.document
+    if not media: return "Unknown", "Unknown"
+    
+    # Calculate Size
+    size_bytes = media.file_size
+    if not size_bytes: size_str = "0 B"
+    else:
+        for unit in ['B','KB','MB','GB','TB']:
+            if size_bytes < 1024:
+                size_str = f"{size_bytes:.2f}{unit}"
+                break
+            size_bytes /= 1024
+            
+    # Extract DC ID
+    # Pyrogram stores file references in string format. The DC ID is usually embedded.
+    try:
+        file_id = media.file_id
+        import base64
+        import struct
+        decoded = base64.urlsafe_b64decode(file_id + '=' * (-len(file_id) % 4))
+        dc_id = struct.unpack('<q', decoded[0:8])[0] & 0xFF
+        dc_name = f"DC{dc_id}"
+        # Optional Map for aesthetics based on standard Telegram DCs
+        dc_map = {1: "Miami, USA - DC1", 2: "Amsterdam, NL - DC2", 3: "Miami, USA - DC3", 4: "Amsterdam, NL - DC4", 5: "Singapore, SG - DC5"}
+        dc_str = dc_map.get(dc_id, dc_name)
+    except:
+        dc_str = "Unknown DC"
+        
+    return size_str, dc_str

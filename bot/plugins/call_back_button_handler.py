@@ -36,9 +36,19 @@ async def panel_handler(client, cb):
     if not task: return await cb.answer("Task Expired", show_alert=True)
 
     if action == "info":
-        await cb.message.edit("📝 Probing MediaInfo (No download)...")
+        # --- FIX: Clean, professional UI text ---
+        await cb.message.edit("📝 Probing MediaInfo...")
         chunk_path = f"probe_{tid}.mkv"
-        await user_app.download_media(task['msg'], file_name=chunk_path, limit=1) 
+        
+        # --- The secret 5MB Stream limit remains active in the background ---
+        with open(chunk_path, "wb") as f:
+            dl_size = 0
+            async for chunk in user_app.stream_media(task['msg']):
+                f.write(chunk)
+                dl_size += len(chunk)
+                if dl_size >= 5 * 1024 * 1024:  # 5MB Limit
+                    break
+                    
         raw_info = os.popen(f"mediainfo {chunk_path}").read()
         formatted_info = raw_info.replace("General\n", "📄 General\n").replace("Video\n", "🎬 Video\n").replace("Audio\n", "🔊 Audio\n").replace("Text\n", "💬 Subtitle\n").replace("Menu\n", "📑 Menu\n")
         os.remove(chunk_path)
@@ -50,9 +60,19 @@ async def panel_handler(client, cb):
         await cb.message.edit(QUEUE_MSG)
 
     elif action == "select":
+        # --- FIX: Clean, professional UI text ---
         await cb.message.edit("⏳ Fetching Stream List...")
         chunk_path = f"probe_{tid}.mkv"
-        await user_app.download_media(task['msg'], file_name=chunk_path, limit=1)
+        
+        # --- The secret 5MB Stream limit remains active in the background ---
+        with open(chunk_path, "wb") as f:
+            dl_size = 0
+            async for chunk in user_app.stream_media(task['msg']):
+                f.write(chunk)
+                dl_size += len(chunk)
+                if dl_size >= 5 * 1024 * 1024:  # 5MB Limit
+                    break
+                    
         streams = os.popen(f"ffprobe -v error -show_entries stream=index,codec_type,codec_name:stream_tags=language -of json {chunk_path}").read()
         os.remove(chunk_path)
         data = json.loads(streams).get("streams", [])
@@ -72,7 +92,6 @@ async def panel_handler(client, cb):
 async def bsetting_cb(client, cb):
     user_id = cb.from_user.id
     
-    # 🔒 Strict Owner Lock for Supergroups!
     if user_id != config_data["OWNER_ID"]:
         return await cb.answer("⚠️ Only the Owner can use these buttons!", show_alert=True)
         
@@ -139,7 +158,14 @@ async def bsetting_cb(client, cb):
 
     elif action == "back" or action == "close":
         if user_id in AppState.bsetting_state: del AppState.bsetting_state[user_id]
-        if action == "close": return await cb.message.delete()
+        
+        if action == "close":
+            try:
+                await cb.message.delete()
+                if cb.message.reply_to_message:
+                    await cb.message.reply_to_message.delete()
+            except: pass
+            return
         
         help_text = (
             "**⚙️ Bot Settings Menu**\n"
@@ -153,7 +179,6 @@ async def bsetting_cb(client, cb):
 async def delthumb_cb(client, cb):
     user_id = cb.from_user.id
     
-    # 🔒 Strict Owner Lock
     if user_id != config_data["OWNER_ID"]:
         return await cb.answer("⚠️ Only the Owner can delete thumbnails!", show_alert=True)
 

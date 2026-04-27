@@ -7,7 +7,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.__init__ import bot_app, user_app, logger, config_data
 from bot.config import Config
 from bot.localisation import Localisation
-from bot.helper_funcs.utils import queue, AppState, get_ist, send_log, get_sys_stats
+from bot.helper_funcs.utils import queue, AppState, get_ist, send_log, get_sys_stats, get_file_info
 from bot.helper_funcs.display_progress import progress_bar, humanbytes, time_formatter, make_bar
 
 async def take_screen_shot(video_file, output_directory, ttl):
@@ -58,7 +58,6 @@ async def worker():
             
             res = str(config_data.get('RESOLUTION', '820x480')).lower().replace("x", ":")
             
-            # --- CUSTOM WATERMARK ENGINE ---
             vf_filters = [f"scale={res}"]
             watermark = str(config_data.get("WATERMARK_TEXT", "None"))
             if watermark.lower() != "none" and watermark.strip() != "":
@@ -120,9 +119,7 @@ async def worker():
                 if out and os.path.exists(out): os.remove(out)
                 continue
 
-            # --- MTPROTO SMART AUTO-SPLITTER ALGORITHM ---
             final_size = os.path.getsize(out)
-            # Sets split limit to 3.95GB if Premium, else 1.95GB for Bot Token/Free User
             MAX_SIZE = 3950000000 if AppState.is_premium else 1950000000 
             files_to_upload = [out]
             
@@ -161,7 +158,17 @@ async def worker():
             as_doc = config_data.get("AS_DOCUMENT", True)
 
             for idx, upload_file in enumerate(files_to_upload):
-                final_caption = f"✅ <b>{upload_file}</b>\n\n<b>©ᴇɴᴄᴏᴅᴇᴅ Bʏ:</b> <b>@{AppState.bot_username}</b>"
+                
+                part_size_bytes = os.path.getsize(upload_file)
+                part_size_str = "0 B"
+                for unit in ['B','KB','MB','GB','TB']:
+                    if part_size_bytes < 1024:
+                        part_size_str = f"{part_size_bytes:.2f}{unit}"
+                        break
+                    part_size_bytes /= 1024
+                    
+                # Initial caption without Data Center
+                final_caption = f"✅ <b>{upload_file}</b>\n**Size:** {part_size_str}\n\n<b>©ᴇɴᴄᴏᴅᴇᴅ Bʏ:</b> <b>@{AppState.bot_username}</b>"
                 if len(files_to_upload) > 1:
                     final_caption = f"**[Part {idx+1}/{len(files_to_upload)}]**\n" + final_caption
 
@@ -169,18 +176,32 @@ async def worker():
                     upload_start = time.time()
                     last_up_time = [time.time()]
                     
+                    uploaded_msg = None
                     if as_doc:
-                        await user_app.send_document(
+                        uploaded_msg = await user_app.send_document(
                             chat_id=msg.chat.id, document=upload_file, thumb=actual_thumb, caption=final_caption, force_document=True,
                             progress=progress_bar, progress_args=(Localisation.UPLOAD_START, status_msg, upload_start, last_up_time),
                             reply_to_message_id=msg.id
                         )
                     else:
-                        await user_app.send_video(
+                        uploaded_msg = await user_app.send_video(
                             chat_id=msg.chat.id, video=upload_file, thumb=actual_thumb, caption=final_caption,
                             progress=progress_bar, progress_args=(Localisation.UPLOAD_START, status_msg, upload_start, last_up_time),
                             reply_to_message_id=msg.id
                         )
+                        
+                    # --- THE POST-UPLOAD DATA CENTER FIX ---
+                    if uploaded_msg:
+                        # Extract the exact DC ID now that the file is on Telegram!
+                        _, new_dc_str = get_file_info(uploaded_msg)
+                        
+                        updated_caption = f"✅ <b>{upload_file}</b>\n**Size:** {part_size_str}\n**Data Center:** {new_dc_str}\n\n<b>©ᴇɴᴄᴏᴅᴇᴅ Bʏ:</b> <b>@{AppState.bot_username}</b>"
+                        if len(files_to_upload) > 1:
+                            updated_caption = f"**[Part {idx+1}/{len(files_to_upload)}]**\n" + updated_caption
+                        
+                        # Edit the caption silently to inject the Data Center
+                        await uploaded_msg.edit_caption(updated_caption)
+
                 except Exception as e:
                     await status_msg.edit(Localisation.UPLOAD_FAILED)
                     await send_log(f"**Upload Stopped, Bot is Free Now !!** \n\nProcess Done at {get_ist()}\nError: {e}")
@@ -188,6 +209,10 @@ async def worker():
                     if os.path.exists(upload_file): os.remove(upload_file)
 
             await status_msg.edit("✅ Process Complete!")
+            await asyncio.sleep(3) 
+            try: await status_msg.delete() 
+            except: pass
+            
             await send_log(f"**Upload Done, Bot is Free Now !!** \n\nProcess Done at {get_ist()}")
             
         except Exception as e: logger.error(f"Fatal Worker Error: {e}")
