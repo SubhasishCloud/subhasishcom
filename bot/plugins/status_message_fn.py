@@ -24,10 +24,11 @@ async def status_cmd(client, message):
     
     msg = await message.reply(text)
     
-    # Auto-Delete if no tasks are running to keep chat clean
+    # Auto-Delete BOTH the bot's reply and the user's command if idle
     if AppState.active_file_name == "None" and queue.qsize() == 0:
         await asyncio.sleep(30)
         try:
             await msg.delete()
+            await message.delete()
         except: 
             pass
