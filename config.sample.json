@@ -6,9 +6,11 @@
   "AUTH_USERS": [987654321, 1122334455],
   "LOG_CHANNEL": -1001234567890,
   "USER_SESSION_STRING": "your_pyrogram_string_session_here",
-  "CRF": "28",
+  "CRF": "38",
   "PRESET": "fast",
   "RESOLUTION": "820x480",
   "AUDIO_BITRATE": "96k",
-  "CODEC": "libx265"
+  "CODEC": "libx265",
+  "WATERMARK_TEXT": "None",
+  "AS_DOCUMENT": true
 }
