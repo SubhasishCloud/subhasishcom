@@ -4,7 +4,7 @@ from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
 from bot.__init__ import bot_app, user_app, config_data
 from bot.config import Config
-from bot.helper_funcs.utils import AppState, queue
+from bot.helper_funcs.utils import AppState, queue, get_file_info
 from bot.helper_funcs.download import get_graph_link
 from bot.localisation import Localisation
 
@@ -35,6 +35,16 @@ async def panel_handler(client, cb):
     task = AppState.pending_tasks.get(tid)
     if not task: return await cb.answer("Task Expired", show_alert=True)
 
+    # --- FIX: Executing the Safe Wiping Protocol when Close is clicked ---
+    if action == "close":
+        AppState.pending_tasks.pop(tid, None)
+        try:
+            await cb.message.delete()
+            if 'msg' in task:
+                await task['msg'].delete()
+        except: pass
+        return
+
     if action == "info":
         await cb.message.edit("📝 Probing MediaInfo...")
         chunk_path = f"probe_{tid}.mkv"
@@ -48,11 +58,23 @@ async def panel_handler(client, cb):
                     if dl_size >= 5 * 1024 * 1024:
                         break
                         
+            size_str, _ = get_file_info(task['msg'])
             raw_info = os.popen(f"mediainfo {chunk_path}").read()
-            formatted_info = raw_info.replace("General\n", "📄 General\n").replace("Video\n", "🎬 Video\n").replace("Audio\n", "🔊 Audio\n").replace("Text\n", "💬 Subtitle\n").replace("Menu\n", "📑 Menu\n")
+            
+            formatted_info = f"<b>{task['name']}</b><br><b>Size:</b> {size_str}<br><br>"
+            formatted_info += raw_info.replace(
+                "General\n", "<b>📄 General</b><br>"
+            ).replace(
+                "\nVideo\n", "<br><br><b>🎬 Video</b><br>"
+            ).replace(
+                "\nAudio\n", "<br><br><b>🔊 Audio</b><br>"
+            ).replace(
+                "\nText\n", "<br><br><b>💬 Subtitle</b><br>"
+            ).replace(
+                "\nMenu\n", "<br><br><b>📑 Menu</b><br>"
+            ).replace("\n", "<br>")
             
             link = await get_graph_link(formatted_info, "Subhasish Encoder Mediainfo", "Subhasish Encoder")
-            # FIX: Send raw URL to trigger Telegram's native Instant View Preview!
             await cb.message.edit(f"📊 **MediaInfo Link:**\n{link}")
         except Exception as e:
             await cb.message.edit(f"❌ **MediaInfo Error:** `{e}`")
@@ -89,15 +111,12 @@ async def panel_handler(client, cb):
             if os.path.exists(chunk_path): os.remove(chunk_path)
 
     elif action == "input":
-        # FIX: Remove 'await cb.message.delete()' so the user can read the tracks!
         AppState.awaiting_index[cb.message.chat.id] = {"tid": tid, "menu_msg_id": cb.message.id}
         await bot_app.send_message(cb.message.chat.id, "Reply with indexes (e.g. 0,2,4):", reply_markup=ForceReply(selective=True))
 
-# --- INTERACTIVE BSETTING HANDLERS ---
 @bot_app.on_callback_query(filters.regex(r"^bsetting_(.*)"))
 async def bsetting_cb(client, cb):
     user_id = cb.from_user.id
-    
     if user_id != config_data["OWNER_ID"]:
         return await cb.answer("⚠️ Only the Owner can use these buttons!", show_alert=True)
         
@@ -180,11 +199,9 @@ async def bsetting_cb(client, cb):
         )
         await cb.message.edit(help_text, reply_markup=get_bsetting_menu())
 
-# --- THUMBNAIL & CANCEL HANDLERS ---
 @bot_app.on_callback_query(filters.regex(r"^delthumb_(.*)"))
 async def delthumb_cb(client, cb):
     user_id = cb.from_user.id
-    
     if user_id != config_data["OWNER_ID"]:
         return await cb.answer("⚠️ Only the Owner can delete thumbnails!", show_alert=True)
 

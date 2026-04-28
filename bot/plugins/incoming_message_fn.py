@@ -34,9 +34,11 @@ async def incoming_file(client, message):
     
     size_str, dc_str = get_file_info(message)
     
+    # FIX: Added the ❌ Close button to perfectly execute your safety wipe
     btn = InlineKeyboardMarkup([
         [InlineKeyboardButton("📊 MediaInfo", callback_data=f"panel_info_{tid}"), InlineKeyboardButton("✂️ Stream Select", callback_data=f"panel_select_{tid}")],
-        [InlineKeyboardButton("▶️ Compress (Default)", callback_data=f"panel_all_{tid}")]
+        [InlineKeyboardButton("▶️ Compress (Default)", callback_data=f"panel_all_{tid}")],
+        [InlineKeyboardButton("❌ Close", callback_data=f"panel_close_{tid}")]
     ])
     
     text = (
@@ -55,7 +57,6 @@ async def incoming_file(client, message):
 async def index_receiver(client, message):
     if not is_sudo(message): return
     
-    # FIX: Extract the dictionary we saved during the callback
     awaiting_data = AppState.awaiting_index.pop(message.chat.id, None)
     if awaiting_data:
         tid = awaiting_data.get("tid")
@@ -67,12 +68,11 @@ async def index_receiver(client, message):
             for idx in message.text.split(','): 
                 map_args.extend(["-map", f"0:{idx.strip()}"])
             
-            # FIX: Perfectly delete the Stream Menu, the ForceReply Prompt, AND the user's typed numbers!
             try:
                 messages_to_delete = [
-                    menu_msg_id,                   # Deletes the Main Stream list
-                    message.reply_to_message.id,   # Deletes the "Reply with indexes..." prompt
-                    message.id                     # Deletes the message where you typed "0,1"
+                    menu_msg_id,                   
+                    message.reply_to_message.id,   
+                    message.id                     
                 ]
                 await client.delete_messages(chat_id=message.chat.id, message_ids=messages_to_delete)
             except: pass
