@@ -8,7 +8,7 @@ import asyncio
 import traceback
 import gc
 import speedtest
-import re # FIX: Imported Regex to fix the MediaInfo dummy names
+import re 
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.__init__ import bot_app, user_app, config_data
@@ -136,7 +136,6 @@ async def log_cmd(client, message):
         with open("bot.log", "r") as f: log_data = f.read()[-30000:] 
         if not log_data: return await msg.edit("⚠️ Log file is empty.")
         content_json = [{"tag": "pre", "children": [log_data]}]
-        # FIX: Explicitly set "Subhasish Encoder" Author!
         link = await get_graph_link(content_json, "Subhasish Encoder Logs", "Subhasish Encoder")
         await msg.edit(f"📝 **Bot Logs:**\n{link}")
     except Exception as e: await msg.edit(f"❌ Failed to fetch logs: {e}")
@@ -148,46 +147,47 @@ async def mediainfo_cmd(client, message):
         return await message.reply("⚠️ Reply to a video or document to get its MediaInfo.")
         
     msg = await message.reply("📝 Probing MediaInfo...")
-    tid = str(message.id)
-    chunk_path = f"probe_{tid}.mkv"
+    real_path = None
     
     try:
-        await user_app.download_media(message.reply_to_message, file_name=chunk_path)
-        raw_info = os.popen(f"mediainfo {chunk_path}").read()
-        os.remove(chunk_path)
+        # FIX: Directly capture Pyrogram's dynamically generated path to prevent Errno 2
+        real_path = await user_app.download_media(message.reply_to_message)
+        if not real_path or not os.path.exists(real_path):
+            return await msg.edit("❌ Failed to download file for probing.")
+            
+        raw_info = os.popen(f"mediainfo '{real_path}'").read()
+        os.remove(real_path)
         
-        # FIX: Extract actual Telegram size and name
         size_str, _ = get_file_info(message.reply_to_message)
         real_name = getattr(message.reply_to_message.video or message.reply_to_message.document, 'file_name', 'video.mp4')
         
-        # FIX: Advanced Regex overrides the dummy chunk data with real Telegram data
         raw_info = re.sub(r"Complete name\s+:\s+.*", f"Complete name                            : {real_name}", raw_info)
         raw_info = re.sub(r"File size\s+:\s+.*", f"File size                                : {size_str}", raw_info)
         
         content_json = []
         content_json.append({"tag": "h3", "children": [real_name]})
-        content_json.append({"tag": "hr"})
 
         current_pre = ""
         for line in raw_info.split('\n'):
             clean_line = line.strip()
-            if clean_line in ["General", "Video", "Audio", "Text", "Menu"]:
+            # FIX: Dynamically injects emojis for ALL Audio tracks (Audio, Audio #1, Audio #2)
+            if clean_line in ["General", "Video", "Text", "Menu"] or clean_line.startswith("Audio"):
                 if current_pre:
                     content_json.append({"tag": "pre", "children": [current_pre]})
                     current_pre = ""
-                icons = {"General": "📄", "Video": "🎬", "Audio": "🔊", "Text": "💬", "Menu": "📑"}
-                content_json.append({"tag": "h3", "children": [f"{icons.get(clean_line, '')} {clean_line}"]})
+                    
+                icon = "📄" if clean_line == "General" else "🎬" if clean_line == "Video" else "💬" if clean_line == "Text" else "📑" if clean_line == "Menu" else "🔊"
+                content_json.append({"tag": "h3", "children": [f"{icon} {clean_line}"]})
             else:
                 if line.strip(): current_pre += line + "\n"
         
         if current_pre: content_json.append({"tag": "pre", "children": [current_pre]})
             
-        # FIX: Explicitly set "Subhasish Encoder" Author!
         link = await get_graph_link(content_json, "Subhasish Encoder Mediainfo", "Subhasish Encoder")
         await msg.edit(f"📊 **MediaInfo Link:**\n{link}")
     except Exception as e:
         await msg.edit(f"❌ Error: {e}")
-        if os.path.exists(chunk_path): os.remove(chunk_path)
+        if real_path and os.path.exists(real_path): os.remove(real_path)
 
 async def generate_sample_background(client, target_message, status_msg):
     try:

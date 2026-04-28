@@ -102,7 +102,6 @@ async def worker():
                                 if match: duration_sec = int(match.group(1))*3600 + int(match.group(2))*60 + int(match.group(3))
 
                             if "time=" in line_str:
-                                # FIX: The exact requested regex fallback restored perfectly!
                                 time_match = re.search(r"time=(\d{2}):(\d{2}):(\d{2})\.", line_str)
                                 if not time_match: time_match = re.search(r"time=(\d{2}):(\d{2}):(\d{2})", line_str)
                                     
@@ -115,18 +114,28 @@ async def worker():
                                         eta = (duration_sec - curr_sec) / speed if speed > 0 else 0
                                         
                                         cpu, mem, disk = get_sys_stats()
+                                        sent, recv = get_network_io()
+                                        import psutil
+                                        free_disk_gb = round(psutil.disk_usage('/').free / (1024**3), 2)
+                                        uptime_str = get_readable_time((time.time() - getattr(AppState, 'boot_time', time.time()))*1000)
+                                        
                                         est_total_bytes = os.path.getsize(file_path) * 0.4 
                                         current_bytes = (percent/100) * est_total_bytes
 
+                                        # FIX: Flawless layout implementation
                                         text = (
-                                            f"ℹ️ **ɴᴏᴡ:** 💡 ENCODING... 💡\n\n"
-                                            f"⏱️ **ᴇᴛᴀ:** {time_formatter(eta*1000)}\n\n"
+                                            f"**🌐 Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs 🌐**\n\n"
                                             f"`{AppState.active_file_name}`\n"
-                                            f"[{make_bar(percent)}] {percent:.2f}%\n\n"
-                                            f"⚡️ **ꜱᴘᴇᴇᴅ:** {humanbytes((current_bytes/elapsed) if elapsed else 0)}/s\n"
-                                            f"⏰ **ᴇʟᴀᴘsᴇᴅ:** {time_formatter(elapsed*1000)}\n"
-                                            f"📦 **sɪᴢᴇ:** {humanbytes(current_bytes)} / {humanbytes(est_total_bytes)}\n\n"
-                                            f"🖥 CPU: {cpu}% | 💽 RAM: {mem}%"
+                                            f"[{make_bar(percent)}] {percent:.2f}%\n"
+                                            f"**Processed:** {humanbytes(current_bytes)} **of** {humanbytes(est_total_bytes)}\n"
+                                            f"**Status:** Encoding | **ETA:** {time_formatter(eta*1000)}\n"
+                                            f"**Speed:** {humanbytes((current_bytes/elapsed) if elapsed else 0)}/s | **Elapsed:** {time_formatter(elapsed*1000)}\n\n"
+                                            f"**📥 Files in Queue:** {queue.qsize()}\n\n"
+                                            f"**🖥 Hardware Info:**\n"
+                                            f"**CPU:** {cpu}% | **Free:** {free_disk_gb}GB ({100-disk}%)\n"
+                                            f"**In:** {humanbytes(recv)} | **Out:** {humanbytes(sent)}\n"
+                                            f"**Ram:** {mem}% | **Uptime:** {uptime_str}\n\n"
+                                            f"**🏷Maintained By: @Subhasish_bot**"
                                         )
                                         try:
                                             await status_msg.edit(text, reply_markup=btn)

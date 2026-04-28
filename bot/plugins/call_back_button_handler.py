@@ -1,6 +1,6 @@
 import os
 import json
-import re # FIX: Imported Regex to cleanly overwrite the dummy chunk data
+import re 
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
 from bot.__init__ import bot_app, user_app, config_data
@@ -60,23 +60,22 @@ async def panel_handler(client, cb):
             size_str, _ = get_file_info(task['msg'])
             raw_info = os.popen(f"mediainfo {chunk_path}").read()
             
-            # FIX: Regex violently overwrites the fake local chunk data with the true Telegram data
             raw_info = re.sub(r"Complete name\s+:\s+.*", f"Complete name                            : {task['name']}", raw_info)
             raw_info = re.sub(r"File size\s+:\s+.*", f"File size                                : {size_str}", raw_info)
             
             content_json = []
             content_json.append({"tag": "h3", "children": [task['name']]})
-            content_json.append({"tag": "hr"})
 
             current_pre = ""
             for line in raw_info.split('\n'):
                 clean_line = line.strip()
-                if clean_line in ["General", "Video", "Audio", "Text", "Menu"]:
+                # FIX: Dynamically injects emojis for ALL Audio tracks (Audio, Audio #1, Audio #2)
+                if clean_line in ["General", "Video", "Text", "Menu"] or clean_line.startswith("Audio"):
                     if current_pre:
                         content_json.append({"tag": "pre", "children": [current_pre]})
                         current_pre = ""
-                    icons = {"General": "📄", "Video": "🎬", "Audio": "🔊", "Text": "💬", "Menu": "📑"}
-                    content_json.append({"tag": "h3", "children": [f"{icons.get(clean_line, '')} {clean_line}"]})
+                    icon = "📄" if clean_line == "General" else "🎬" if clean_line == "Video" else "💬" if clean_line == "Text" else "📑" if clean_line == "Menu" else "🔊"
+                    content_json.append({"tag": "h3", "children": [f"{icon} {clean_line}"]})
                 else:
                     if line.strip(): 
                         current_pre += line + "\n"
@@ -84,7 +83,6 @@ async def panel_handler(client, cb):
             if current_pre:
                 content_json.append({"tag": "pre", "children": [current_pre]})
             
-            # FIX: Restored Author text exactly as requested!
             link = await get_graph_link(content_json, title="Subhasish Encoder Mediainfo", author="Subhasish Encoder")
             await cb.message.edit(f"📊 **MediaInfo Link:**\n{link}")
         except Exception as e:
