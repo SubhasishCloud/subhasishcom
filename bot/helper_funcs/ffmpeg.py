@@ -43,17 +43,27 @@ async def worker():
                     await send_log(f"**Download Error, Bot is Free Now !!** \n\nProcess Done at {get_ist()}\nReason: Path not exist")
                     continue
             except Exception as e:
-                # FIX: If the user hit Cancel during download, completely abort the task!
-                if AppState.cancel_task or str(e) == "Task Cancelled by User":
+                # FIX: Strict Download Cancellation Breaker. Stops the bot from jumping to FFmpeg!
+                if AppState.cancel_task or "Cancelled" in str(e) or "400" in str(e):
+                    AppState.cancel_task = False
                     await status_msg.edit("⚠️ Task Cancelled by User.")
                     await msg.reply("❌ **Task Cancelled.**", quote=True)
                     if file_path and os.path.exists(file_path): os.remove(file_path)
-                    continue
+                    continue 
                 else:
                     await status_msg.edit(Localisation.DOWNLOAD_FAILED)
                     await send_log(f"**Download Failed, Bot is Free Now !!** \n\nProcess Done at {get_ist()}\nError: {e}")
+                    if file_path and os.path.exists(file_path): os.remove(file_path)
                     continue
             
+            # Double-check cancel state before proceeding to FFmpeg
+            if AppState.cancel_task:
+                AppState.cancel_task = False
+                await status_msg.edit("⚠️ Task Cancelled by User.")
+                await msg.reply("❌ **Task Cancelled.**", quote=True)
+                if file_path and os.path.exists(file_path): os.remove(file_path)
+                continue
+
             dl_time = int(time.time() - start_time)
             await status_msg.edit(Localisation.DOWNLOADED_SUCCESS.format(time_formatter(dl_time * 1000)))
             await send_log(f"**Download Stopped, Bot is Free Now !!** \n\nProcess Done at {get_ist()}")
@@ -161,8 +171,9 @@ async def worker():
                 if process.returncode != 0: raise Exception("Task Cancelled by User")
                     
             except Exception as e:
-                # FIX: If the user hit Cancel during Compression, completely abort the task!
-                if AppState.cancel_task or str(e) == "Task Cancelled by User":
+                # FIX: Strict Compression Cancellation Breaker
+                if AppState.cancel_task or "Cancelled" in str(e):
+                    AppState.cancel_task = False
                     await status_msg.edit("⚠️ Task Cancelled by User.")
                     await msg.reply("❌ **Task Cancelled.**", quote=True)
                     if file_path and os.path.exists(file_path): os.remove(file_path)
@@ -237,8 +248,9 @@ async def worker():
                         await uploaded_msg.edit_caption(updated_caption)
 
                 except Exception as e:
-                    # FIX: If the user hit Cancel during upload, completely abort the task!
-                    if AppState.cancel_task or str(e) == "Task Cancelled by User":
+                    # FIX: Strict Upload Cancellation Breaker
+                    if AppState.cancel_task or "Cancelled" in str(e) or "400" in str(e):
+                        AppState.cancel_task = False
                         await status_msg.edit("⚠️ Task Cancelled by User.")
                         await msg.reply("❌ **Task Cancelled.**", quote=True)
                         if os.path.exists(upload_file): os.remove(upload_file)

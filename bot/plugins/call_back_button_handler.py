@@ -1,6 +1,7 @@
 import os
 import json
 import re 
+import asyncio
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
 from bot.__init__ import bot_app, user_app, config_data
@@ -65,12 +66,17 @@ async def panel_handler(client, cb):
                         
             size_str, _ = get_file_info(task['msg'])
             
-            import asyncio
+            # FIX: Added process termination shield to prevent infinite freeze loop
             process = await asyncio.create_subprocess_exec(
                 "mediainfo", chunk_path,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
-            stdout, _ = await process.communicate()
+            try:
+                stdout, _ = await asyncio.wait_for(process.communicate(), timeout=30)
+            except asyncio.TimeoutError:
+                process.kill()
+                raise Exception("MediaInfo Process Timed Out")
+                
             raw_info = stdout.decode('utf-8').strip()
             
             raw_info = re.sub(r"Complete name\s+:\s+.*", f"Complete name                            : {task['name']}", raw_info)
@@ -122,12 +128,17 @@ async def panel_handler(client, cb):
                     if dl_size >= 5 * 1024 * 1024:
                         break
                         
-            import asyncio
+            # FIX: Added process termination shield to prevent infinite freeze loop
             process = await asyncio.create_subprocess_exec(
                 "ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type,codec_name:stream_tags=language", "-of", "json", chunk_path,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
-            stdout, _ = await process.communicate()
+            try:
+                stdout, _ = await asyncio.wait_for(process.communicate(), timeout=30)
+            except asyncio.TimeoutError:
+                process.kill()
+                raise Exception("FFProbe Process Timed Out")
+                
             streams = stdout.decode('utf-8').strip()
             
             data = json.loads(streams).get("streams", [])
@@ -185,9 +196,7 @@ async def bsetting_cb(client, cb):
         key = action.replace("select_", "")
         AppState.bsetting_state[user_id] = {"key": key, "step": "awaiting_value"}
         
-        # Hide value logic
         hide_keys = ["API_ID", "API_HASH", "TG_BOT_TOKEN", "OWNER_ID", "USER_SESSION_STRING"]
-        # Lock remove button logic (We allow USER_SESSION_STRING to be removed!)
         lock_keys = ["API_ID", "API_HASH", "TG_BOT_TOKEN", "OWNER_ID"]
         
         if key in hide_keys: current_val = "******** (Hidden for Security)"
@@ -226,17 +235,35 @@ async def bsetting_cb(client, cb):
                 await cb.message.edit(f"✅ **{key}** successfully securely stored.\n\n✨ **𝘛𝘺𝘱𝘦 /𝘳𝘦𝘴𝘵𝘢𝘳𝘵 𝘵𝘰 𝘢𝘱𝘱𝘭𝘺 𝘤𝘰𝘳𝘦 𝘤𝘩𝘢𝘯𝘨𝘦𝘴.** ✨", reply_markup=btn)
             else: 
                 await cb.message.edit(f"✅ **{key}** successfully updated to `{v}`.\n\n✨ **𝘛𝘺𝘱𝘦 /𝘳𝘦𝘴𝘵𝘢𝘳𝘵 𝘵𝘰 𝘢𝘱𝘱𝘭𝘺.** ✨", reply_markup=btn)
+                
+            # FIX: Wipe the user's text message to remove Ghost Text from chat!
+            if "msg_to_delete" in AppState.bsetting_state[user_id]:
+                try: await client.delete_messages(chat_id=cb.message.chat.id, message_ids=AppState.bsetting_state[user_id]["msg_to_delete"])
+                except: pass
+                
         except Exception as e: 
             await cb.message.edit(f"❌ **Error formatting variable:**\n{e}")
 
         del AppState.bsetting_state[user_id]
 
     elif action == "confirm_no":
-        if user_id in AppState.bsetting_state: del AppState.bsetting_state[user_id]
+        if user_id in AppState.bsetting_state: 
+            # FIX: Wipe the user's text message to remove Ghost Text from chat!
+            if "msg_to_delete" in AppState.bsetting_state[user_id]:
+                try: await client.delete_messages(chat_id=cb.message.chat.id, message_ids=AppState.bsetting_state[user_id]["msg_to_delete"])
+                except: pass
+            del AppState.bsetting_state[user_id]
         await cb.message.edit("❌ Update cancelled.")
+        await asyncio.sleep(2)
+        await cb.message.edit("**⚙️ Bot Settings Menu**", reply_markup=get_bsetting_menu())
 
     elif action == "back" or action == "close":
-        if user_id in AppState.bsetting_state: del AppState.bsetting_state[user_id]
+        if user_id in AppState.bsetting_state: 
+            # FIX: Wipe the user's text message to remove Ghost Text from chat!
+            if "msg_to_delete" in AppState.bsetting_state[user_id]:
+                try: await client.delete_messages(chat_id=cb.message.chat.id, message_ids=AppState.bsetting_state[user_id]["msg_to_delete"])
+                except: pass
+            del AppState.bsetting_state[user_id]
         
         if action == "close":
             try:

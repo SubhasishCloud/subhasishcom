@@ -158,7 +158,12 @@ async def mediainfo_cmd(client, message):
             "mediainfo", real_path,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
-        stdout, _ = await process.communicate()
+        try:
+            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=30)
+        except asyncio.TimeoutError:
+            process.kill()
+            raise Exception("MediaInfo Process Timed Out")
+            
         raw_info = stdout.decode('utf-8').strip()
         os.remove(real_path)
         
@@ -204,7 +209,12 @@ async def generate_sample_background(client, target_message, status_msg):
             "ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file_path,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
-        stdout, _ = await process.communicate()
+        try:
+            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=30)
+        except asyncio.TimeoutError:
+            process.kill()
+            raise Exception("FFProbe Process Timed Out")
+            
         duration_output = stdout.decode('utf-8').strip()
         
         try: total_duration = float(duration_output)
@@ -315,9 +325,9 @@ async def speedtest_cmd(client, message):
         u_speed = humanbytes(res['upload'] / 8)
         ping = res['ping']
         
+        # FIX: The exact HTML + Markdown styling provided by your friend to create a true underline!
         text = (
-            f"🚀 **sᴘᴇᴇᴅᴛᴇsᴛ ɪɴғᴏ**\n"
-            f"__\n\n"
+            f"🚀 <u>**sᴘᴇᴇᴅᴛᴇsᴛ ɪɴғᴏ**</u>\n\n"
             f"🔻 **ᴅᴏᴡɴʟᴏᴀᴅ:** `{d_speed}/s`\n"
             f"🔺 **ᴜᴘʟᴏᴀᴅ:** `{u_speed}/s`\n"
             f"📶 **ᴘɪɴɢ:** `{ping} ms`\n"
@@ -420,10 +430,17 @@ async def bsetting_input_catcher(client, message):
         key = AppState.bsetting_state[user_id]["key"]
         val = message.text.strip()
         
+        AppState.bsetting_state[user_id]["msg_to_delete"] = message.id
+        
+        if str(config_data.get(key)) == str(val):
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Menu", callback_data="bsetting_back"), InlineKeyboardButton("❌ Close", callback_data="bsetting_close")]])
+            msg = await message.reply(f"⚠️ **{key}** is already set to `{val}`.", reply_markup=btn)
+            AppState.bsetting_state[user_id]["bot_msg_to_delete"] = msg.id
+            return
+
         AppState.bsetting_state[user_id]["pending_value"] = val
         AppState.bsetting_state[user_id]["step"] = "confirming"
         
-        # FIX: Completely stripped USER_SESSION_STRING from the core sensitive_keys!
         sensitive_keys = ["API_ID", "API_HASH", "TG_BOT_TOKEN", "OWNER_ID"]
         
         btn = InlineKeyboardMarkup([
@@ -442,4 +459,5 @@ async def bsetting_input_catcher(client, message):
         else:
             text = f"❓ **Confirm Update**\n\nYou entered a new value for **{key}**:\n`{val}`\n\nDo you want to save this?"
             
-        await message.reply(text, reply_markup=btn)
+        msg = await message.reply(text, reply_markup=btn)
+        AppState.bsetting_state[user_id]["bot_msg_to_delete"] = msg.id

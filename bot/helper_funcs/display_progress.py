@@ -44,7 +44,7 @@ async def progress_bar(current, total, status_text, message, start_time, last_up
         elif "Uploading" in status_text: header = "📤 Uploading ... 📤"
         else: header = "🔄 Processing ... 🔄"
 
-        # FIX: Flawlessly restored your exclusive Phonetic Active UI!
+        # FIX: The Main UI is now strictly the Phonetic Layout. No more Status text overlap!
         text = (
             f"ℹ️ **sᴛᴀᴛᴜs:** {header}\n\n"
             f"`{AppState.active_file_name}`\n"

@@ -2,7 +2,6 @@ import time
 import asyncio
 from pyrogram import filters
 from bot.__init__ import bot_app, config_data
-# FIX: Imported the correct START_TIME global variable
 from bot.helper_funcs.utils import AppState, queue, get_sys_stats, get_network_io, get_readable_time, START_TIME
 from bot.helper_funcs.display_progress import humanbytes
 
@@ -15,16 +14,16 @@ def is_sudo(message):
 async def status_cmd(client, message):
     if not is_sudo(message): return
     
+    cpu, mem, disk = get_sys_stats()
+    sent, recv = get_network_io()
+    import psutil
+    free_disk_gb = round(psutil.disk_usage('/').free / (1024**3), 2)
+    uptime_str = get_readable_time((time.time() - START_TIME)*1000)
+    
+    # FIX: Status Command forcefully injects the Bot Statistics header above whatever the active task is doing!
     if AppState.active_file_name != "None" and AppState.last_progress_text:
-        text = AppState.last_progress_text
+        text = f"**🌐 Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs 🌐**\n\n{AppState.last_progress_text}\n\n**📥 Files in Queue:** {queue.qsize()}\n\n**🖥 Hardware Info:**\n**CPU:** {cpu}% | **Free:** {free_disk_gb}GB ({100-disk}%)\n**In:** {humanbytes(recv)} | **Out:** {humanbytes(sent)}\n**Ram:** {mem}% | **Uptime:** {uptime_str}\n\n**🏷Maintained By: @Subhasish_bot**"
     else:
-        cpu, mem, disk = get_sys_stats()
-        sent, recv = get_network_io()
-        import psutil
-        free_disk_gb = round(psutil.disk_usage('/').free / (1024**3), 2)
-        # FIX: Now calculates perfect uptime using the system START_TIME
-        uptime_str = get_readable_time((time.time() - START_TIME)*1000)
-        
         text = (
             f"**🌐 Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs 🌐**\n\n"
             f"**Status:** Idle\n\n"
