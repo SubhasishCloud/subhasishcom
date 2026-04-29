@@ -121,7 +121,8 @@ async def clear_cmd(client, message):
 @bot_app.on_message(filters.command("cancel"))
 async def cancel_cmd(client, message):
     if not is_sudo(message): return await message.reply(UNAUTH_MSG)
-    if not AppState.current_process: 
+    # FIX: Removed the AppState.current_process check so it works on downloads too!
+    if AppState.active_file_name == "None": 
         msg = await message.reply(Localisation.NO_ACTIVE_TASK)
         return asyncio.create_task(auto_clean(msg, message))
     btn = InlineKeyboardMarkup([[InlineKeyboardButton("Yes✅", callback_data="confirm_cancel_yes"), InlineKeyboardButton("No ❌", callback_data="confirm_cancel_no")]])
@@ -150,7 +151,6 @@ async def mediainfo_cmd(client, message):
     real_path = None
     
     try:
-        # FIX: Directly capture Pyrogram's dynamically generated path to prevent Errno 2
         real_path = await user_app.download_media(message.reply_to_message)
         if not real_path or not os.path.exists(real_path):
             return await msg.edit("❌ Failed to download file for probing.")
@@ -170,7 +170,6 @@ async def mediainfo_cmd(client, message):
         current_pre = ""
         for line in raw_info.split('\n'):
             clean_line = line.strip()
-            # FIX: Dynamically injects emojis for ALL Audio tracks (Audio, Audio #1, Audio #2)
             if clean_line in ["General", "Video", "Text", "Menu"] or clean_line.startswith("Audio"):
                 if current_pre:
                     content_json.append({"tag": "pre", "children": [current_pre]})
@@ -267,7 +266,12 @@ async def restart_cmd(client, message):
 async def cancel_all_cmd(client, message):
     if not is_owner(message): return await message.reply(UNAUTH_MSG)
     while not queue.empty(): queue.get_nowait(); queue.task_done()
-    if AppState.current_process: AppState.current_process.terminate(); AppState.current_process = None
+    # FIX: Added kill-switch for downloads/uploads
+    AppState.cancel_task = True 
+    if AppState.current_process: 
+        try: AppState.current_process.terminate()
+        except: pass
+        AppState.current_process = None
     msg = await message.reply("⚠️ **ALL TASKS CANCELLED AND QUEUE CLEARED.**")
     asyncio.create_task(auto_clean(msg, message))
 

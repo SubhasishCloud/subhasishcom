@@ -7,7 +7,8 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.__init__ import bot_app, user_app, logger, config_data
 from bot.config import Config
 from bot.localisation import Localisation
-from bot.helper_funcs.utils import queue, AppState, get_ist, send_log, get_sys_stats, get_file_info, get_network_io, get_readable_time
+# FIX: Imported the correct START_TIME global variable
+from bot.helper_funcs.utils import queue, AppState, get_ist, send_log, get_sys_stats, get_file_info, get_network_io, get_readable_time, START_TIME
 from bot.helper_funcs.display_progress import progress_bar, humanbytes, time_formatter, make_bar
 
 async def take_screen_shot(video_file, output_directory, ttl):
@@ -24,6 +25,7 @@ async def worker():
     while True:
         msg, name, map_args, status_msg = await queue.get()
         AppState.active_file_name = name
+        AppState.cancel_task = False 
         start_time = time.time()
         last_up = [time.time()]
         file_path = None
@@ -88,6 +90,12 @@ async def worker():
 
                 line_buf = bytearray()
                 while True:
+                    if AppState.cancel_task:
+                        AppState.cancel_task = False
+                        if AppState.current_process:
+                            AppState.current_process.terminate()
+                        raise Exception("Task Cancelled by User")
+
                     chunk = await process.stderr.read(10)
                     if not chunk: break
                     for b in chunk:
@@ -117,12 +125,12 @@ async def worker():
                                         sent, recv = get_network_io()
                                         import psutil
                                         free_disk_gb = round(psutil.disk_usage('/').free / (1024**3), 2)
-                                        uptime_str = get_readable_time((time.time() - getattr(AppState, 'boot_time', time.time()))*1000)
+                                        # FIX: Uses perfect system START_TIME for uptime
+                                        uptime_str = get_readable_time((time.time() - START_TIME)*1000)
                                         
                                         est_total_bytes = os.path.getsize(file_path) * 0.4 
                                         current_bytes = (percent/100) * est_total_bytes
 
-                                        # FIX: Flawless layout implementation
                                         text = (
                                             f"**🌐 Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs 🌐**\n\n"
                                             f"`{AppState.active_file_name}`\n"
@@ -137,6 +145,9 @@ async def worker():
                                             f"**Ram:** {mem}% | **Uptime:** {uptime_str}\n\n"
                                             f"**🏷Maintained By: @Subhasish_bot**"
                                         )
+                                        
+                                        AppState.last_progress_text = text 
+                                        
                                         try:
                                             await status_msg.edit(text, reply_markup=btn)
                                             last_update_time = time.time()
@@ -234,4 +245,5 @@ async def worker():
             if file_path and os.path.exists(file_path): os.remove(file_path)
             if actual_thumb and actual_thumb != custom_thumb and os.path.exists(actual_thumb): os.remove(actual_thumb)
             AppState.active_file_name = "None"
+            AppState.last_progress_text = ""
             queue.task_done()

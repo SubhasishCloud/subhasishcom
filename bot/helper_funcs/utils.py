@@ -1,7 +1,7 @@
 import asyncio
 import time
 from datetime import datetime, timezone, timedelta
-from pyrogram.file_id import FileId
+from pyrogram.file_id import FileId 
 from bot.__init__ import bot_app, logger, config_data
 
 queue = asyncio.Queue()
@@ -15,6 +15,8 @@ class AppState:
     bot_username = "Bot" 
     bsetting_state = {}  
     is_premium = False 
+    cancel_task = False        # FIX: The Global Network Kill-Switch
+    last_progress_text = ""    # FIX: The Status UI Snapshot Tracker
 
 def get_readable_time(milliseconds: int) -> str:
     seconds, milliseconds = divmod(int(milliseconds), 1000)
@@ -55,12 +57,10 @@ def get_network_io():
     recv = net.bytes_recv
     return sent, recv
 
-# --- FIX: 100% ACCURATE DATA CENTER EXTRACTOR ---
 def get_file_info(message):
     media = message.video or message.document
     if not media: return "Unknown", "Unknown"
     
-    # Calculate Size
     size_bytes = media.file_size
     if not size_bytes: size_str = "0 B"
     else:
@@ -70,20 +70,11 @@ def get_file_info(message):
                 break
             size_bytes /= 1024
             
-    # Extract Accurate DC ID using Pyrogram's native FileId object
     try:
         file_id_obj = FileId.decode(media.file_id)
         dc_id = file_id_obj.dc_id
-        
-        dc_map = {
-            1: "Miami, USA - DC1", 
-            2: "Amsterdam, NL - DC2", 
-            3: "Miami, USA - DC3", 
-            4: "Amsterdam, NL - DC4", 
-            5: "Singapore, SG - DC5"
-        }
+        dc_map = {1: "Miami, USA - DC1", 2: "Amsterdam, NL - DC2", 3: "Miami, USA - DC3", 4: "Amsterdam, NL - DC4", 5: "Singapore, SG - DC5"}
         dc_str = dc_map.get(dc_id, f"DC{dc_id}")
-    except:
-        dc_str = "Unknown DC"
+    except: dc_str = "Unknown DC"
         
     return size_str, dc_str

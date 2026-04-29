@@ -2,7 +2,8 @@ import time
 import asyncio
 from pyrogram import filters
 from bot.__init__ import bot_app, config_data
-from bot.helper_funcs.utils import AppState, queue, get_sys_stats, get_network_io, get_readable_time
+# FIX: Imported the correct START_TIME global variable
+from bot.helper_funcs.utils import AppState, queue, get_sys_stats, get_network_io, get_readable_time, START_TIME
 from bot.helper_funcs.display_progress import humanbytes
 
 def is_sudo(message):
@@ -14,27 +15,29 @@ def is_sudo(message):
 async def status_cmd(client, message):
     if not is_sudo(message): return
     
-    cpu, mem, disk = get_sys_stats()
-    sent, recv = get_network_io()
-    import psutil
-    free_disk_gb = round(psutil.disk_usage('/').free / (1024**3), 2)
-    uptime_str = get_readable_time((time.time() - getattr(AppState, 'boot_time', time.time()))*1000)
-    
-    # FIX: Clean Idle Layout requested by user!
-    text = (
-        f"**🌐 Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs 🌐**\n\n"
-        f"**Status:** Idle\n\n"
-        f"**📥 Files in Queue:** {queue.qsize()}\n\n"
-        f"**🖥 Hardware Info:**\n"
-        f"**CPU:** {cpu}% | **Free:** {free_disk_gb}GB ({100-disk}%)\n"
-        f"**In:** {humanbytes(recv)} | **Out:** {humanbytes(sent)}\n"
-        f"**Ram:** {mem}% | **Uptime:** {uptime_str}\n\n"
-        f"**🏷Maintained By: @Subhasish_bot**"
-    )
+    if AppState.active_file_name != "None" and AppState.last_progress_text:
+        text = AppState.last_progress_text
+    else:
+        cpu, mem, disk = get_sys_stats()
+        sent, recv = get_network_io()
+        import psutil
+        free_disk_gb = round(psutil.disk_usage('/').free / (1024**3), 2)
+        # FIX: Now calculates perfect uptime using the system START_TIME
+        uptime_str = get_readable_time((time.time() - START_TIME)*1000)
+        
+        text = (
+            f"**🌐 Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs 🌐**\n\n"
+            f"**Status:** Idle\n\n"
+            f"**📥 Files in Queue:** {queue.qsize()}\n\n"
+            f"**🖥 Hardware Info:**\n"
+            f"**CPU:** {cpu}% | **Free:** {free_disk_gb}GB ({100-disk}%)\n"
+            f"**In:** {humanbytes(recv)} | **Out:** {humanbytes(sent)}\n"
+            f"**Ram:** {mem}% | **Uptime:** {uptime_str}\n\n"
+            f"**🏷Maintained By: @Subhasish_bot**"
+        )
     
     msg = await message.reply(text)
     
-    # FIX: Safely deletes the command and the response after 30 seconds WITHOUT breaking active tasks!
     await asyncio.sleep(30)
     try: await message.delete()
     except: pass
