@@ -4,7 +4,6 @@ import time
 import re
 from datetime import datetime, timezone, timedelta
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-# FIX: Native bot import
 from bot import bot_app, user_app, logger, config_data
 from bot.config import Config
 from bot.localisation import Localisation
@@ -107,9 +106,16 @@ async def worker():
                 
             vf_string = ",".join(vf_filters)
             
+            # FIX: Enterprise Floating-Point parsing. 
+            # Allows exact decimals like "33.5" but safely falls back to "28" if the user types invalid text.
+            try:
+                crf_val = str(float(config_data.get("CRF", "28")))
+            except Exception:
+                crf_val = "28"
+            
             cmd = ["ffmpeg", "-i", file_path] + map_args + [
                 "-c:v", str(config_data.get("CODEC", "libx265")), 
-                "-crf", str(config_data.get("CRF", "28")), 
+                "-crf", crf_val, 
                 "-preset", str(config_data.get("PRESET", "fast")),
                 "-vf", vf_string, 
                 "-c:a", "libopus", 
