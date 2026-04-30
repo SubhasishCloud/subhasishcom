@@ -9,9 +9,8 @@ from bot.helper_funcs.utils import START_TIME, get_readable_time, AppState
 from bot.helper_funcs.ffmpeg import worker
 
 # ------------------------------------------------------------------
-# FIX: THE "GOLDEN SHIELD" EXPLICIT IMPORTS
-# These MUST be here to bypass Pyrogram's circular import deadlock
-# and guarantee the bot actually listens to commands.
+# FIX 1: THE "GOLDEN SHIELD" EXPLICIT IMPORTS
+# Prevents Pyrogram circular import deadlocks.
 # ------------------------------------------------------------------
 import bot.plugins.commands
 import bot.plugins.call_back_button_handler
@@ -39,8 +38,6 @@ async def main():
             
         logger.info("Subhasish Encoder is fully online!")
         
-        asyncio.create_task(worker())
-        
         if os.path.exists("restart.json"):
             try:
                 with open("restart.json", "r") as f:
@@ -59,8 +56,18 @@ async def main():
             finally:
                 if os.path.exists("restart.json"):
                     os.remove("restart.json")
-            
-        await idle()
+
+        # ------------------------------------------------------------------
+        # FIX 2: ENTERPRISE CONCURRENCY (DEEPSEEK'S FIX)
+        # Prevents Pyrogram's idle() from deadlocking the event loop.
+        # ------------------------------------------------------------------
+        async def idle_forever():
+            await asyncio.Event().wait()
+
+        await asyncio.gather(
+            worker(),       # Starts the background queue processor
+            idle_forever()  # Keeps the loop alive concurrently
+        )
         
     except Exception as e:
         logger.error(f"Fatal error in main loop: {e}")
