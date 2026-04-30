@@ -4,7 +4,8 @@ import time
 import re
 from datetime import datetime, timezone, timedelta
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from bot.__init__ import bot_app, user_app, logger, config_data
+# FIX: Native bot import
+from bot import bot_app, user_app, logger, config_data
 from bot.config import Config
 from bot.localisation import Localisation
 from bot.helper_funcs.utils import queue, AppState, TaskState, get_ist, send_log, get_sys_stats, get_file_info, kill_running_process, get_readable_time, START_TIME
@@ -41,7 +42,6 @@ async def take_screen_shot(video_file, output_directory, ttl):
     return None
 
 async def worker():
-    # FIX: The Dynamic Client Router. Seamlessly switches between Premium Userbot and Standard Bot.
     active_client = user_app if user_app else bot_app
     
     while True:
@@ -66,7 +66,6 @@ async def worker():
             
             download_cancelled = False
             try:
-                # Routed dynamically!
                 file_path = await active_client.download_media(msg, progress=progress_bar, progress_args=("Downloading", status_msg, start_time, last_up))
             except asyncio.CancelledError: download_cancelled = True
             except Exception as e:
@@ -247,14 +246,12 @@ async def worker():
                     
                     uploaded_msg = None
                     if as_doc:
-                        # Routed dynamically!
                         uploaded_msg = await active_client.send_document(
                             chat_id=msg.chat.id, document=upload_file, thumb=actual_thumb, caption=final_caption, force_document=True,
                             progress=progress_bar, progress_args=("Uploading", status_msg, upload_start, last_up_time),
                             reply_to_message_id=msg.id
                         )
                     else:
-                        # Routed dynamically!
                         uploaded_msg = await active_client.send_video(
                             chat_id=msg.chat.id, video=upload_file, thumb=actual_thumb, caption=final_caption,
                             progress=progress_bar, progress_args=("Uploading", status_msg, upload_start, last_up_time),

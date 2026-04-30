@@ -1,6 +1,7 @@
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from bot.__init__ import bot_app, user_app, config_data
+# FIX: Native bot import
+from bot import bot_app, user_app, config_data
 from bot.helper_funcs.utils import queue, AppState, get_file_info
 import os
 
@@ -43,7 +44,6 @@ async def incoming_media(client, message):
         "name": file_name
     }
 
-    # FIX: The requested phonetic format and custom mirrored emojis applied perfectly!
     btn = InlineKeyboardMarkup([
         [InlineKeyboardButton("▶️ ᴄᴏᴍᴘʀᴇss ▶️", callback_data=f"panel_all_{tid}"), 
          InlineKeyboardButton("🎞 sᴇʟᴇᴄᴛ sᴛʀᴇᴀᴍ 🎞", callback_data=f"panel_select_{tid}")],
@@ -60,7 +60,8 @@ async def incoming_media(client, message):
         quote=True
     )
 
-@bot_app.on_message(filters.reply & filters.text)
+# FIX: Added group=2 to prevent it from swallowing commands in replies!
+@bot_app.on_message(filters.reply & filters.text, group=2)
 async def index_receiver(client, message):
     if not message.reply_to_message: return
     

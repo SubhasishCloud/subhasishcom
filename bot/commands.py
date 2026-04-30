@@ -13,7 +13,8 @@ import speedtest
 import re 
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from bot.__init__ import bot_app, user_app, config_data
+# FIX: Native bot import
+from bot import bot_app, user_app, config_data
 from bot.config import Config
 from bot.localisation import Localisation
 from bot.helper_funcs.utils import AppState, TaskState, queue, START_TIME, get_readable_time, send_log, get_file_info, kill_running_process
@@ -44,10 +45,6 @@ async def auto_clean(msg, message):
             await message.delete()
         except: pass
 
-# ==========================================
-# 🟢 PUBLIC COMMANDS
-# ==========================================
-# FIX: Added prefixes to aggressively force command recognition in Supergroups!
 @bot_app.on_message(filters.command("start", prefixes=["/", "!", "."]))
 async def start_cmd(client, message): 
     await message.reply(Localisation.START_TEXT)
@@ -66,9 +63,6 @@ async def ping_cmd(client, message):
     await msg.edit(f"📶Pɪɴɢ = {ping_ms}ms\n⏰ **Uptime:** `{get_uptime()}`")
     asyncio.create_task(auto_clean(msg, message))
 
-# ==========================================
-# 🔴 SUDO COMMANDS
-# ==========================================
 @bot_app.on_message(filters.command("settings", prefixes=["/", "!", "."]))
 async def settings_cmd(client, message):
     if not is_sudo(message): return await message.reply(UNAUTH_MSG)
@@ -421,7 +415,8 @@ async def bsetting_cmd(client, message):
     )
     await message.reply(help_text, reply_markup=btn)
 
-@bot_app.on_message(filters.text & filters.private)
+# FIX: Added group=1 to prevent it from swallowing standard commands!
+@bot_app.on_message(filters.text & filters.private, group=1)
 async def bsetting_input_catcher(client, message):
     user_id = message.from_user.id
     

@@ -4,12 +4,12 @@ import os
 import signal
 from datetime import datetime, timezone, timedelta
 from pyrogram.file_id import FileId 
-from bot.__init__ import bot_app, logger, config_data
+# FIX: Native bot import
+from bot import bot_app, logger, config_data
 
 queue = asyncio.Queue()
 START_TIME = time.time()
 
-# FIX: Enterprise State Machine
 class TaskState:
     IDLE = "Idle"
     QUEUED = "Queued"
@@ -29,7 +29,6 @@ class AppState:
     active_file_name = "None"
     active_origin_msg = None
     
-    # FIX: Splitting the UI variables prevents all overlap bugs!
     main_progress_text = ""
     status_snapshot = ""
     
@@ -39,7 +38,6 @@ class AppState:
     bsetting_state = {}  
     is_premium = False 
 
-# FIX: Universal OS Process Group Killer (Destroys PuTTY Zombies)
 async def kill_running_process():
     async with AppState.process_lock:
         proc = AppState.current_process

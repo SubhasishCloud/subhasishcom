@@ -6,7 +6,8 @@ import signal
 import asyncio
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
-from bot.__init__ import bot_app, user_app, config_data
+# FIX: Native bot import
+from bot import bot_app, user_app, config_data
 from bot.config import Config
 from bot.helper_funcs.utils import AppState, TaskState, queue, get_file_info, kill_running_process
 from bot.helper_funcs.download import get_graph_link
@@ -58,7 +59,6 @@ async def panel_handler(client, cb):
         chunk_path = f"probe_{uuid.uuid4().hex}.mkv"
         
         try:
-            # FIX: Injected the Dynamic Client Router to prevent Bot-Only crashes!
             active_client = user_app if user_app else bot_app
             
             with open(chunk_path, "wb") as f:
@@ -126,7 +126,6 @@ async def panel_handler(client, cb):
         chunk_path = f"probe_{uuid.uuid4().hex}.mkv"
         
         try:
-            # FIX: Injected the Dynamic Client Router to prevent Bot-Only crashes!
             active_client = user_app if user_app else bot_app
             
             with open(chunk_path, "wb") as f:
