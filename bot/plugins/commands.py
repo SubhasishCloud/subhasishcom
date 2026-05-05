@@ -13,6 +13,7 @@ import speedtest
 import re 
 import psutil
 from pyrogram import filters
+from pyrogram.errors import FloodWait
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot import bot_app, user_app, config_data, logger
 from bot.config import Config
@@ -305,7 +306,7 @@ async def generate_sample_background(client, target_message, status_msg):
             AppState.current_process = cut_proc
             
         MAX_WAIT_SEC = 300.0
-        POLL_SEC     = 1.5
+        POLL_SEC     = 2.5
         wait_start   = time.time()
         last_ui_update = time.time() - 6
         gen_start = time.time()
@@ -321,7 +322,7 @@ async def generate_sample_background(client, target_message, status_msg):
                 break
                 
             now = time.time()
-            if now - last_ui_update >= 1.5:
+            if now - last_ui_update >= POLL_SEC:
                 last_ui_update = now
                 elapsed = max(now - gen_start, 0.001)
                 total_fed = progress_dict["downloaded"]
@@ -330,10 +331,18 @@ async def generate_sample_background(client, target_message, status_msg):
                 pct = min((total_fed / file_size) * 100, 99.9) if file_size > 0 else 0
                 cpu, mem, disk = get_sys_stats()
                 speed_str = humanbytes(speed)
-                est_rem = max(0, 15 - elapsed) 
+                
+                # --- DYNAMIC ETA FIX ---
+                if speed > 0:
+                    expected_bytes = 16 * 1024 * 1024 # Approx 16MB expected for 30s Fast Seek
+                    rem_bytes = max(0, expected_bytes - total_fed)
+                    est_rem = rem_bytes / speed
+                else:
+                    est_rem = max(1, 15 - elapsed)
+                # Ensure it never gets stuck at 00s before completing
+                est_rem = max(1, est_rem)
                 eta_str = time_formatter(est_rem * 1000)
                 
-                # --- EXACT PRIMARY UI LAYOUT ---
                 primary_text = (
                     f"{Localisation.SAMPLE_CUTTING}\n\n"
                     f"[{make_bar(pct)}]\n"
@@ -345,7 +354,6 @@ async def generate_sample_background(client, target_message, status_msg):
                     f"🖥 **CPU:** {cpu}% | 💽 **RAM:** {mem}%"
                 )
                 
-                # --- EXACT SECONDARY /STATUS LAYOUT ---
                 sent, recv = get_network_io()
                 free_disk_gb = round(psutil.disk_usage('/').free / (1024**3), 2)
                 uptime_str = get_readable_time((time.time() - START_TIME)*1000)
@@ -375,18 +383,25 @@ async def generate_sample_background(client, target_message, status_msg):
                     os.killpg(os.getpgid(cut_proc.pid), signal.SIGKILL)
                 except Exception:
                     pass
-                return await status_msg.edit(
-                    "⚠️ Sample cut timed out.\n"
-                    "The HTTP seek may have stalled — please try again."
-                )
+                try:
+                    return await status_msg.edit(
+                        "⚠️ Sample cut timed out.\n"
+                        "The HTTP seek may have stalled — please try again."
+                    )
+                except FloodWait as e:
+                    await asyncio.sleep(e.value)
+                    try: return await status_msg.edit("⚠️ Sample cut timed out.\nThe HTTP seek may have stalled — please try again.")
+                    except: pass
+                except Exception:
+                    pass
+                return
                 
-            await asyncio.sleep(POLL_SEC)
+            await asyncio.sleep(0.5)
 
         async with AppState.process_lock:
             if AppState.current_process == cut_proc:
                 AppState.current_process = None
                 
-        # --- PROXY SAFETY NET BEFORE COMPLETION ---
         if proxy_server is not None:
             try:
                 proxy_server.close()
@@ -400,7 +415,15 @@ async def generate_sample_background(client, target_message, status_msg):
         gen_elapsed = int(time.time() - gen_start)
             
         if not os.path.exists(sample_out) or os.path.getsize(sample_out) < 4096:
-            return await status_msg.edit("⚠️ Sample output is empty or corrupt. Please try again.")
+            try:
+                return await status_msg.edit("⚠️ Sample output is empty or corrupt. Please try again.")
+            except FloodWait as e:
+                await asyncio.sleep(e.value)
+                try: return await status_msg.edit("⚠️ Sample output is empty or corrupt. Please try again.")
+                except: pass
+            except Exception:
+                pass
+            return
 
         # ---------- THUMBNAIL GENERATION ----------
         if actual_thumb is None:
@@ -417,8 +440,14 @@ async def generate_sample_background(client, target_message, status_msg):
         if 'secondary_text' in locals():
             AppState.status_snapshot = secondary_text.replace("Sample Generating", current_phase)
             
-        # <--- HERE IS Localisation.SAMPLE_UPLOADING --->
-        await status_msg.edit(Localisation.SAMPLE_UPLOADING, reply_markup=sample_btn)
+        try:
+            await status_msg.edit(Localisation.SAMPLE_UPLOADING, reply_markup=sample_btn)
+        except FloodWait as e:
+            await asyncio.sleep(e.value)
+            try: await status_msg.edit(Localisation.SAMPLE_UPLOADING, reply_markup=sample_btn)
+            except: pass
+        except Exception:
+            pass
         
         caption = (
             f"✅ <b>Successfully Extracted</b> `{SAMPLE_DURATION}s` <b>From {cut_str} Of</b> `{AppState.active_file_name}` <b>In {gen_elapsed}S.</b>\n\n"
@@ -447,9 +476,12 @@ async def generate_sample_background(client, target_message, status_msg):
     except Exception as e:
         logger.error("[SAMPLEGEN ERROR] %s\n%s", e, traceback.format_exc())
         try: await status_msg.edit(f"❌ **Sample Generation Error:**\n`{e}`")
+        except FloodWait as fw:
+            await asyncio.sleep(fw.value)
+            try: await status_msg.edit(f"❌ **Sample Generation Error:**\n`{e}`")
+            except: pass
         except Exception: pass
     finally:
-        # --- PROXY SAFETY NET IN FINALLY BLOCK ---
         if proxy_server is not None:
             try:
                 proxy_server.close()

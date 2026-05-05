@@ -65,7 +65,7 @@ async def start_tg_http_proxy(
 ) -> asyncio.AbstractServer:
     """
     Minimal asyncio TCP server that exposes the Telegram file over HTTP/1.1
-    with byte-Range support.
+    with STRICT byte-Range support to prevent over-downloading.
     """
     BLOCK_SIZE: int = 512 * 1024  
 
@@ -82,23 +82,34 @@ async def start_tg_http_proxy(
                 raw += part
             
             req_start: int = 0
+            req_end: int = file_size - 1
+            
+            # --- STRICT BOUND PARSING ---
             for line in raw.decode("utf-8", errors="ignore").split("\r\n"):
                 if line.lower().startswith("range:"):
                     rng = line.split(":", 1)[1].strip()
                     if rng.startswith("bytes="):
-                        token = rng[6:].split("-")[0]
-                        req_start = int(token) if token else 0
+                        parts = rng[6:].split("-")
+                        token_start = parts[0]
+                        token_end = parts[1] if len(parts) > 1 else ""
+                        req_start = int(token_start) if token_start else 0
+                        req_end = int(token_end) if token_end else file_size - 1
                     break
+            
+            req_start = max(0, min(req_start, file_size - 1))
+            req_end = max(req_start, min(req_end, file_size - 1))
             
             chunk_offset: int = req_start // BLOCK_SIZE
             byte_skip:    int = req_start - (chunk_offset * BLOCK_SIZE)
-            content_length = max(0, file_size - req_start)
+            
+            bytes_to_send = (req_end - req_start) + 1
+            chunk_limit = (bytes_to_send + byte_skip) // BLOCK_SIZE + 2
             
             resp_header = (
                 "HTTP/1.1 206 Partial Content\r\n"
                 "Content-Type: application/octet-stream\r\n"
-                f"Content-Range: bytes {req_start}-{file_size - 1}/{file_size}\r\n"
-                f"Content-Length: {content_length}\r\n"
+                f"Content-Range: bytes {req_start}-{req_end}/{file_size}\r\n"
+                f"Content-Length: {bytes_to_send}\r\n"
                 "Accept-Ranges: bytes\r\n"
                 "Connection: close\r\n"
                 "\r\n"
@@ -106,7 +117,9 @@ async def start_tg_http_proxy(
             writer.write(resp_header.encode())
             await writer.drain()
             
-            async for chunk in active_client.stream_media(target_message, offset=chunk_offset):
+            sent_bytes = 0
+            # --- STRICT LIMIT PASSED TO PYROGRAM ---
+            async for chunk in active_client.stream_media(target_message, offset=chunk_offset, limit=chunk_limit):
                 if AppState.cancel_task or writer.is_closing():
                     break
                 
@@ -116,12 +129,22 @@ async def start_tg_http_proxy(
                     byte_skip -= trim
                     if not chunk:
                         continue
+                
+                # --- PREVENT SENDING EXCESS BYTES ---
+                if sent_bytes + len(chunk) > bytes_to_send:
+                    chunk = chunk[:bytes_to_send - sent_bytes]
+
                 try:
                     writer.write(chunk)
                     await writer.drain()
+                    sent_bytes += len(chunk)
                     progress_dict["downloaded"] += len(chunk) 
                 except (BrokenPipeError, ConnectionResetError, OSError):
                     break
+                
+                if sent_bytes >= bytes_to_send:
+                    break
+                    
         except (BrokenPipeError, ConnectionResetError):
             pass
         except Exception as exc:
