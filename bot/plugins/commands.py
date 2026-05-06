@@ -384,7 +384,7 @@ async def generate_sample_background(client, target_message, status_msg):
                 elapsed_str = time.strftime('%Ss', time.gmtime(elapsed))
                 
                 secondary_text = (
-                    f"🌐 Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs 🌐\n"
+                    f"🌐 <b><u>Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs</u></b> 🌐\n"
                     f"{AppState.active_file_name}\n"
                     f"[{make_bar(pct)}] {pct:.2f}%\n"
                     f"**Processed:** {humanbytes(total_fed)} of {humanbytes(file_size)}\n"
@@ -395,7 +395,7 @@ async def generate_sample_background(client, target_message, status_msg):
                     f"**CPU:** {cpu}% | **Free:** {free_disk_gb}GB ({100-disk}%)\n"
                     f"**In:** {humanbytes(recv)} | **Out:** {humanbytes(sent)}\n"
                     f"**Ram:** {mem}% | **Uptime:** {uptime_str}\n\n"
-                    f"🏷Maintained By: @{AppState.bot_username}"
+                    f"**🏷 Maintained By: @Subhasish_bot**"
                 )
                 
                 try: await status_msg.edit(primary_text, reply_markup=sample_btn)

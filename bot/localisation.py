@@ -5,7 +5,7 @@ class Localisation:
         "<b>➥ I Will Encode Them One By One As I Have</b> <b>Queue Feature.</b>\n"
         "<b>➥ Just Send Me The Jpg/Pic & It Will Be Set As Your Custom Thumbnail.</b>\n"
         "<b>➥ For ffmpeg Lovers [Owner/Sudo Users Only] - You Can Change Configs By</b> <code>/bsetting</code>\n\n"
-        "🏷<b>Maintained By: @Subhasish_bot</b>"
+        "**🏷 Maintained By: @Subhasish_bot**"
     )
     
     HELP_TEXT = (

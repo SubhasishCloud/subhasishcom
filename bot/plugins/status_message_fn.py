@@ -28,7 +28,7 @@ async def status_cmd(client, message):
     
     if AppState.task_state != TaskState.IDLE:
         text = AppState.status_snapshot or (
-            f"**🌐 Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs 🌐**\n\n"
+            f"🌐 <b><u>Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs</u></b> 🌐\n\n"
             f"**Status:** {AppState.task_state}\n\n"
             f"**📥 Files in Queue:** {queue.qsize()}"
         )
@@ -39,14 +39,14 @@ async def status_cmd(client, message):
         uptime_str = get_readable_time((time.time() - START_TIME)*1000)
         
         text = (
-            f"**🌐 Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs 🌐**\n\n"
+            f"🌐 <b><u>Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs</u></b> 🌐\n\n"
             f"**Status:** Idle\n\n"
             f"**📥 Files in Queue:** {queue.qsize()}\n\n"
             f"🔰 <b><u>Hardware Info:</u></b> 🔰\n"
             f"**CPU:** {cpu}% | **Free:** {free_disk_gb}GB ({100-disk}%)\n"
             f"**In:** {humanbytes(recv)} | **Out:** {humanbytes(sent)}\n"
             f"**Ram:** {mem}% | **Uptime:** {uptime_str}\n\n"
-            f"**🏷Maintained By: @{AppState.bot_username}**"
+            f"**🏷 Maintained By: @Subhasish_bot**"
         )
     
     msg = await message.reply(text)

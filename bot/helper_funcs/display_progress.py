@@ -38,7 +38,7 @@ def render_active_status(percent, done_str, total_str, eta_str, speed_str, elaps
     status_text = display_status if display_status else AppState.task_state
     
     text = (
-        f"**🌐 Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs 🌐**\n\n"
+        f"🌐 <b><u>Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs</u></b> 🌐\n\n"
         f"`{AppState.active_file_name}`\n"
         f"[{make_bar(percent)}] {percent:.2f}%\n"
         f"**Processed:** {done_str} of {total_str}\n"
@@ -48,7 +48,7 @@ def render_active_status(percent, done_str, total_str, eta_str, speed_str, elaps
         f"**CPU:** {cpu}% | **Free:** {free_disk_gb}GB ({100-disk}%)\n"
         f"**In:** {humanbytes(net.bytes_recv)} | **Out:** {humanbytes(net.bytes_sent)}\n"
         f"**Ram:** {mem}% | **Uptime:** {uptime_str}\n\n"
-        f"**🏷Maintained By: @Subhasish_bot**"
+        f"**🏷 Maintained By: @Subhasish_bot**"
     )
     return text
 
