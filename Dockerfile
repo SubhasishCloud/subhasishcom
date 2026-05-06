@@ -1,3 +1,19 @@
+FROM python:3.10-slim-bookworm AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY requirements.txt .
+
+RUN python -m venv /opt/venv && \
+    /opt/venv/bin/pip install --upgrade pip && \
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
 FROM python:3.10-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -10,16 +26,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     mediainfo \
     tini \
-    build-essential \
     procps \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
 
-COPY requirements.txt .
-RUN python -m venv /opt/venv && \
-    pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+WORKDIR /app
 
 COPY . .
 
