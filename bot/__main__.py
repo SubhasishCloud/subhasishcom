@@ -69,7 +69,7 @@ async def main():
                         await bot_app.edit_message_text(
                             chat_id, 
                             msg_id, 
-                            "Restarted successfully!"
+                            "**Restarted Successfully!** ✅"
                         )
             except Exception as e:
                 logger.error(f"Failed to edit restart msg: {e}")

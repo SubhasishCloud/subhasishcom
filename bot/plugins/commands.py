@@ -69,7 +69,33 @@ async def ping_cmd(client, message):
     msg = await message.reply("...")
     end_t = time.time()
     ping_ms = round((end_t - start_t) * 1000)
-    await msg.edit(f"📶Pɪɴɢ = {ping_ms}ms\n⏰ **Uptime:** `{get_uptime()}`")
+    uptime_str = get_uptime()
+    
+    git_info = ""
+    if os.path.exists(".git"):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git", "log", "-1", "--format=%cd", "--date=format:%d/%m/%Y|%I:%M %p",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            git_out = stdout.decode().strip()
+            if "|" in git_out:
+                g_date, g_time = git_out.split("|")
+                git_info = (
+                    f"⭐️ <b><u>Last Updated:</u></b> 🌟\n"
+                    f"✶ <i><b>Date ➝</b></i> {g_date}\n"
+                    f"✶ <i><b>Time ➝</b></i> {g_time}"
+                )
+        except Exception:
+            pass
+            
+    text = f"📶 <b>Pɪɴɢ =</b> {ping_ms}ms\n⏰ <b>ᴜᴘᴛɪᴍᴇ:</b> {uptime_str}"
+    if git_info:
+        text += f"\n\n{git_info}"
+        
+    await msg.edit(text)
     asyncio.create_task(auto_clean(msg, message))
 
 @bot_app.on_message(filters.command("settings"))
@@ -558,7 +584,19 @@ async def clearlocals_cmd(client, message):
 @bot_app.on_message(filters.command("restart"))
 async def restart_cmd(client, message):
     if not is_sudo(message): return await message.reply(UNAUTH_MSG)
-    msg = await message.reply("🔄 **Restarting the server now...**")
+    msg = await message.reply("🔄 **Restarting...**")
+    
+    if os.path.exists(".git"):
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git", "pull",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=30)
+        except Exception as e:
+            logger.error(f"❎ **Oops...!! Failed to load the latest data...** ❎ | Reason: {e}")
+            
     with open("restart.json", "w") as f: json.dump({"chat_id": msg.chat.id, "message_id": msg.id}, f)
     os.execl(sys.executable, sys.executable, "-m", "bot")
 
