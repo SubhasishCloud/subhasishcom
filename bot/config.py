@@ -1,5 +1,6 @@
 import os
 import json
+import shutil
 
 class Config:
     ENV_DIR = "subhasishenv"
@@ -32,9 +33,12 @@ class Config:
             os.makedirs(cls.THUMB_DIR)
 
         if not os.path.exists(cls.CONFIG_FILE):
-            default_config = cls.get_default_config()
-            cls.save_config(default_config)
-            return default_config
+            if os.path.exists("config.sample.json"):
+                shutil.copy("config.sample.json", cls.CONFIG_FILE)
+            else:
+                default_config = cls.get_default_config()
+                cls.save_config(default_config)
+                return default_config              
         with open(cls.CONFIG_FILE, "r") as file:
             return json.load(file)
 
