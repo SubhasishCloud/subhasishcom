@@ -1,4 +1,4 @@
-pyrotgfork[fast]
+pyrotgfork
 TgCrypto-pyrofork
 httpx
 psutil
