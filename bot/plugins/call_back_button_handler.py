@@ -6,6 +6,7 @@ import signal
 import asyncio
 from functools import wraps
 from pyrogram import filters
+from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
 from bot import bot_app, user_app, config_data
 from bot.config import Config
@@ -16,37 +17,23 @@ from bot.localisation import Localisation
 QUEUE_MSG = "<b>Added To Queue... 🚦</b>\n<b>Please Be Patient, Your Compression Will Start Soon... 😊</b>"
 UNAUTH_MSG = "<b>You are not allowed to do that 🤭</b>"
 
-def get_button_style(key, val):
-    if key in ["API_ID", "API_HASH", "TG_BOT_TOKEN", "OWNER_ID", "USER_SESSION_STRING"]: return "danger" 
-    if val is True or str(val).lower() == "true": return "success" 
-    if val is False or str(val).lower() == "false": return "danger" 
-    if str(val).lower() == "none" or str(val).strip() == "": return "primary" 
-    if isinstance(val, (int, float)) or (isinstance(val, str) and val.replace('.', '', 1).isdigit()): return "primary" 
-    return "secondary" 
-
 def get_bsetting_menu():
-    btn = lambda k, label=None: InlineKeyboardButton(
-        text=f"{label or k}: {config_data.get(k, 'None')}", 
-        callback_data=f"bsetting_select_{k}", 
-        style=get_button_style(k, config_data.get(k, 'None'))
-    )
-    
-    toggle_btn = lambda k: InlineKeyboardButton(
-        text=f"{k}: {config_data.get(k, 'False')}", 
-        callback_data=f"bsetting_toggle_{k}", 
-        style=get_button_style(k, config_data.get(k, 'False'))
-    )
-    
     return InlineKeyboardMarkup([
-        [btn("API_ID"), btn("API_HASH")],
-        [btn("TG_BOT_TOKEN"), btn("OWNER_ID")],
-        [btn("LOG_CHANNEL"), btn("AUTH_USERS")],
-        [btn("USER_SESSION_STRING")],
-        [btn("CRF"), btn("PRESET")],
-        [btn("RESOLUTION"), btn("AUDIO_BITRATE")],
-        [btn("CODEC"), btn("WATERMARK_TEXT", "WATERMARK")],
-        [toggle_btn("AS_DOCUMENT")],
-        [InlineKeyboardButton("❌ Close", callback_data="bsetting_close", style="danger")]
+        [InlineKeyboardButton("API_ID", callback_data="bsetting_select_API_ID", style=ButtonStyle.PRIMARY),
+         InlineKeyboardButton("API_HASH", callback_data="bsetting_select_API_HASH", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("TG_BOT_TOKEN", callback_data="bsetting_select_TG_BOT_TOKEN", style=ButtonStyle.PRIMARY),
+         InlineKeyboardButton("OWNER_ID", callback_data="bsetting_select_OWNER_ID", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("LOG_CHANNEL", callback_data="bsetting_select_LOG_CHANNEL", style=ButtonStyle.PRIMARY),
+         InlineKeyboardButton("AUTH_USERS", callback_data="bsetting_select_AUTH_USERS", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("USER_SESSION_STRING", callback_data="bsetting_select_USER_SESSION_STRING", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("CRF", callback_data="bsetting_select_CRF", style=ButtonStyle.PRIMARY),
+         InlineKeyboardButton("PRESET", callback_data="bsetting_select_PRESET", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("RESOLUTION", callback_data="bsetting_select_RESOLUTION", style=ButtonStyle.PRIMARY),
+         InlineKeyboardButton("AUDIO_BITRATE", callback_data="bsetting_select_AUDIO_BITRATE", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("CODEC", callback_data="bsetting_select_CODEC", style=ButtonStyle.PRIMARY),
+         InlineKeyboardButton("WATERMARK", callback_data="bsetting_select_WATERMARK_TEXT", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("AS_DOCUMENT", callback_data="bsetting_toggle_AS_DOCUMENT", style=ButtonStyle.PRIMARY)],
+        [InlineKeyboardButton("❌ Close", callback_data="bsetting_close", style=ButtonStyle.DANGER)]
     ])
 
 def is_sudo(cb):
@@ -132,7 +119,7 @@ async def panel_handler(client, cb):
             if current_pre: content_json.append({"tag": "pre", "children": [current_pre]})
             
             link = await get_graph_link(content_json, title="Subhasish Encoder Mediainfo", author="Subhasish Encoder")
-            btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"panel_back_{tid}", style="primary")]])
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"panel_back_{tid}", style=ButtonStyle.SECONDARY)]])
             await cb.message.edit(f"📊 **MediaInfo Link:**\n{link}", reply_markup=btn)
         except Exception as e: await cb.message.edit(f"❌ **MediaInfo Error:** `{e}`")
         finally:
@@ -140,8 +127,8 @@ async def panel_handler(client, cb):
 
     elif action == "back":
         btn = InlineKeyboardMarkup([
-            [InlineKeyboardButton("▶️ ᴄᴏᴍᴘʀᴇss ▶️", callback_data=f"panel_all_{tid}", style="success"), InlineKeyboardButton("🎞 sᴇʟᴇᴄᴛ sᴛʀᴇᴀᴍ 🎞", callback_data=f"panel_select_{tid}", style="primary")],
-            [InlineKeyboardButton("📊 ᴍᴇᴅɪᴀɪɴғᴏ 📊", callback_data=f"panel_info_{tid}", style="primary"), InlineKeyboardButton("❌ ᴄʟᴏsᴇ ❌", callback_data=f"panel_close_{tid}", style="danger")]
+            [InlineKeyboardButton("▶️ ᴄᴏᴍᴘʀᴇss ▶️", callback_data=f"panel_all_{tid}", style=ButtonStyle.SUCCESS), InlineKeyboardButton("🎞 sᴇʟᴇᴄᴛ sᴛʀᴇᴀᴍ 🎞", callback_data=f"panel_select_{tid}", style=ButtonStyle.PRIMARY)],
+            [InlineKeyboardButton("📊 ᴍᴇᴅɪᴀɪɴғᴏ 📊", callback_data=f"panel_info_{tid}", style=ButtonStyle.PRIMARY), InlineKeyboardButton("❌ ᴄʟᴏsᴇ ❌", callback_data=f"panel_close_{tid}", style=ButtonStyle.DANGER)]
         ])
         await cb.message.edit("👇 Choose an action:", reply_markup=btn)
 
@@ -177,7 +164,7 @@ async def panel_handler(client, cb):
             data = json.loads(streams).get("streams", [])
             txt = "**Available Streams:**\n"
             for s in data: txt += f"Index `{s['index']}`: {s['codec_type'].upper()} ({s.get('tags',{}).get('language','und')})\n"
-            btn = InlineKeyboardMarkup([[InlineKeyboardButton("✍️ Input Indexes", callback_data=f"panel_input_{tid}", style="primary")]])
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton("✍️ Input Indexes", callback_data=f"panel_input_{tid}", style=ButtonStyle.PRIMARY)]])
             await cb.message.edit(txt, reply_markup=btn)
         except Exception as e: await cb.message.edit(f"❌ **Stream Select Error:** `{e}`")
         finally:
@@ -201,7 +188,7 @@ async def bsetting_cb(client, cb):
         if key in config_data:
             del config_data[key]
             Config.save_config(config_data)
-        btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Menu", callback_data="bsetting_back", style="primary"), InlineKeyboardButton("❌ Close", callback_data="bsetting_close", style="danger")]])
+        btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Menu", callback_data="bsetting_back", style=ButtonStyle.SECONDARY), InlineKeyboardButton("❌ Close", callback_data="bsetting_close", style=ButtonStyle.DANGER)]])
         await cb.message.edit(f"✅ **{key}** has been successfully removed.\n\n✨ **𝘛𝘺𝘱𝘦 /𝘳𝘦𝘴𝘵𝘢𝘳𝘵 𝘵𝘰 𝘢𝘱𝘱𝘭𝘺.** ✨", reply_markup=btn)
         del AppState.bsetting_state[user_id]
         return
@@ -221,8 +208,8 @@ async def bsetting_cb(client, cb):
         hide_keys = ["API_ID", "API_HASH", "TG_BOT_TOKEN", "OWNER_ID", "USER_SESSION_STRING"]
         lock_keys = ["API_ID", "API_HASH", "TG_BOT_TOKEN", "OWNER_ID"]
         current_val = "******** (Hidden for Security)" if key in hide_keys else config_data.get(key, "Not Set")
-        btn_list = [[InlineKeyboardButton("🔙 Back", callback_data="bsetting_back", style="primary"), InlineKeyboardButton("❌ Close", callback_data="bsetting_close", style="danger")]]
-        if key != "AS_DOCUMENT" and key not in lock_keys and key in config_data: btn_list.insert(0, [InlineKeyboardButton("🗑 Remove Value", callback_data="bsetting_remove", style="danger")])
+        btn_list = [[InlineKeyboardButton("🔙 Back", callback_data="bsetting_back", style=ButtonStyle.SECONDARY), InlineKeyboardButton("❌ Close", callback_data="bsetting_close", style=ButtonStyle.DANGER)]]
+        if key != "AS_DOCUMENT" and key not in lock_keys and key in config_data: btn_list.insert(0, [InlineKeyboardButton("🗑 Remove Value", callback_data="bsetting_remove", style=ButtonStyle.DANGER)])
         btn = InlineKeyboardMarkup(btn_list)
         if key == "WATERMARK_TEXT": await cb.message.edit(f"📝 **Editing {key}**\n\n**Current Value:** `{current_val}`\n\n👇 **Send your Watermark text.**", reply_markup=btn)
         else: await cb.message.edit(f"📝 **Editing {key}**\n\n**Current Value:** `{current_val}`\n\n👇 **Send the new value as a normal message now.**", reply_markup=btn)
@@ -239,7 +226,7 @@ async def bsetting_cb(client, cb):
             elif key in ["USER_SESSION_STRING", "API_HASH", "TG_BOT_TOKEN", "CRF", "PRESET", "RESOLUTION", "AUDIO_BITRATE", "CODEC", "WATERMARK_TEXT"]: v = str(v)
             config_data[key] = v
             Config.save_config(config_data)
-            btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Menu", callback_data="bsetting_back", style="primary"), InlineKeyboardButton("❌ Close", callback_data="bsetting_close", style="danger")]])
+            btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Menu", callback_data="bsetting_back", style=ButtonStyle.SECONDARY), InlineKeyboardButton("❌ Close", callback_data="bsetting_close", style=ButtonStyle.DANGER)]])
             if key in hide_keys: await cb.message.edit(f"✅ **{key}** successfully securely stored.\n\n✨ **𝘛𝘺𝘱𝘦 /𝘳𝘦𝘴𝘵𝘢𝘳𝘵 𝘵𝘰 𝘢𝘱𝘱𝘭𝘺 𝘤𝘰𝘳𝘦 𝘤𝘩𝘢𝘯𝘨𝘦𝘴.** ✨", reply_markup=btn)
             else: await cb.message.edit(f"✅ **{key}** successfully updated to `{v}`.\n\n✨ **𝘛𝘺𝘱𝘦 /𝘳𝘦𝘴𝘵𝘢𝘳𝘵 𝘵𝘰 𝘢𝘱𝘱𝘭𝘺.** ✨", reply_markup=btn)
             if "msg_to_delete" in AppState.bsetting_state[user_id]:
@@ -283,7 +270,7 @@ async def bsetting_cb(client, cb):
 async def cancel_running_cb(client, cb):
     if not is_sudo(cb): return await cb.answer(UNAUTH_MSG, show_alert=True)
     if AppState.task_state == TaskState.IDLE: return await cb.answer("No active task.", show_alert=True)
-    btn = InlineKeyboardMarkup([[InlineKeyboardButton("Yes ✅", callback_data="confirm_cancel_yes", style="success"), InlineKeyboardButton("No ❌", callback_data="confirm_cancel_no", style="danger")]])
+    btn = InlineKeyboardMarkup([[InlineKeyboardButton("Yes ✅", callback_data="confirm_cancel_yes", style=ButtonStyle.SUCCESS), InlineKeyboardButton("No ❌", callback_data="confirm_cancel_no", style=ButtonStyle.DANGER)]])
     prompt = await bot_app.send_message(cb.message.chat.id, Localisation.CANCEL_PROMPT, reply_to_message_id=AppState.active_origin_msg.id if AppState.active_origin_msg else None, reply_markup=btn)
     async def auto_delete_prompt(msg):
         await asyncio.sleep(10)
