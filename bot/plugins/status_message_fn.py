@@ -4,7 +4,8 @@ import asyncio
 import psutil
 from pyrogram import filters
 from pyrogram.types import ReplyParameters
-from bot import bot_app, config_data
+from pyrogram.errors import MessageNotModified, FloodWait, MessageDeleted, MessageIdInvalid
+from bot import bot_app, config_data, logger
 from bot.helper_funcs.utils import AppState, TaskState, queue, get_sys_stats, get_network_io, get_readable_time, START_TIME
 from bot.helper_funcs.display_progress import humanbytes
 
@@ -12,7 +13,6 @@ UNAUTH_MSG = "<b>You are not allowed to do that 🤭</b>"
 
 def is_sudo(message):
     user_id = message.from_user.id if message.from_user else 0
-    chat_id = message.chat.id
     auth_users = config_data.get("AUTH_USERS", [])
     owner_id = config_data.get("OWNER_ID", 0)
     
@@ -25,14 +25,38 @@ def is_sudo(message):
         
     return user_id in auth_users or user_id == owner_id
 
+def get_idle_text():
+    cpu, mem, disk = get_sys_stats()
+    sent, recv = get_network_io()
+    free_disk_gb = round(psutil.disk_usage('/').free / (1024**3), 2)
+    uptime_str = get_readable_time((time.time() - START_TIME)*1000)
+    
+    return (
+        f"🌐 <b><u>Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs</u></b> 🌐\n\n"
+        f"**Status:** Idle\n\n"
+        f"**📥 Files in Queue:** {queue.qsize()}\n\n"
+        f"🔰 <b><u>Hardware Info:</u></b> 🔰\n"
+        f"**CPU:** {cpu}% | **Free:** {free_disk_gb}GB ({100-disk}%)\n"
+        f"**In:** {humanbytes(recv)} | **Out:** {humanbytes(sent)}\n"
+        f"**Ram:** {mem}% | **Uptime:** {uptime_str}\n\n"
+        f"**🏷 Maintained By: @Subhasish_bot**"
+    )
+
+async def auto_delete_unauth(msg):
+    await asyncio.sleep(10)
+    try: await msg.delete()
+    except Exception: pass
+
 @bot_app.on_message(filters.command("status"))
 async def status_cmd(client, message):
     if not is_sudo(message): 
-        return await bot_app.send_message(
+        unauth_msg = await bot_app.send_message(
             message.chat.id, 
             UNAUTH_MSG, 
             reply_parameters=ReplyParameters(message_id=message.id)
         )
+        asyncio.create_task(auto_delete_unauth(unauth_msg))
+        return
     
     if AppState.task_state != TaskState.IDLE:
         text = AppState.status_snapshot or (
@@ -41,21 +65,7 @@ async def status_cmd(client, message):
             f"**📥 Files in Queue:** {queue.qsize()}"
         )
     else:
-        cpu, mem, disk = get_sys_stats()
-        sent, recv = get_network_io()
-        free_disk_gb = round(psutil.disk_usage('/').free / (1024**3), 2)
-        uptime_str = get_readable_time((time.time() - START_TIME)*1000)
-        
-        text = (
-            f"🌐 <b><u>Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs</u></b> 🌐\n\n"
-            f"**Status:** Idle\n\n"
-            f"**📥 Files in Queue:** {queue.qsize()}\n\n"
-            f"🔰 <b><u>Hardware Info:</u></b> 🔰\n"
-            f"**CPU:** {cpu}% | **Free:** {free_disk_gb}GB ({100-disk}%)\n"
-            f"**In:** {humanbytes(recv)} | **Out:** {humanbytes(sent)}\n"
-            f"**Ram:** {mem}% | **Uptime:** {uptime_str}\n\n"
-            f"**🏷 Maintained By: @Subhasish_bot**"
-        )
+        text = get_idle_text()
     
     msg = await bot_app.send_message(
         message.chat.id, 
@@ -63,8 +73,33 @@ async def status_cmd(client, message):
         reply_parameters=ReplyParameters(message_id=message.id)
     )
     
-    await asyncio.sleep(30)
+    for _ in range(6):
+        await asyncio.sleep(5)
+        
+        if AppState.task_state != TaskState.IDLE:
+            new_text = AppState.status_snapshot or (
+                f"🌐 <b><u>Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs</u></b> 🌐\n\n"
+                f"**Status:** {AppState.task_state}\n\n"
+                f"**📥 Files in Queue:** {queue.qsize()}"
+            )
+        else:
+            new_text = get_idle_text()
+
+        if new_text != text:
+            try:
+                await msg.edit_text(new_text)
+                text = new_text
+            except MessageNotModified:
+                pass
+            except FloodWait as e:
+                wait_time = getattr(e, "value", getattr(e, "x", 5))
+                await asyncio.sleep(wait_time)
+            except (MessageDeleted, MessageIdInvalid):
+                break
+            except Exception as e:
+                logger.debug(f"Status edit skipped: {e}")
+    
     try: await message.delete()
-    except: pass
+    except Exception: pass
     try: await msg.delete()
-    except: pass
+    except Exception: pass
