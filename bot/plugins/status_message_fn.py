@@ -1,10 +1,7 @@
-import time
-import json
-import asyncio
-import psutil
+import time, json, asyncio, psutil
 from pyrogram import filters
 from pyrogram.types import ReplyParameters
-from pyrogram.errors import MessageNotModified, FloodWait
+from pyrogram.errors import MessageNotModified, FloodWait, MessageDeleted, MessageIdInvalid
 from bot import bot_app, config_data, logger
 from bot.helper_funcs.utils import AppState, TaskState, queue, get_sys_stats, get_network_io, get_readable_time, START_TIME
 from bot.helper_funcs.display_progress import humanbytes
@@ -13,16 +10,14 @@ UNAUTH_MSG = "<b>You are not allowed to do that 🤭</b>"
 
 def is_sudo(message):
     user_id = message.from_user.id if message.from_user else 0
+    chat_id = message.chat.id
     auth_users = config_data.get("AUTH_USERS", [])
     owner_id = config_data.get("OWNER_ID", 0)
-    
     if isinstance(auth_users, str):
         try: auth_users = json.loads(auth_users)
         except Exception: auth_users = []
-        
     if not isinstance(auth_users, list):
         auth_users = [auth_users] if auth_users else []
-        
     return user_id in auth_users or user_id == owner_id
 
 def get_idle_text():
@@ -50,14 +45,9 @@ async def auto_delete_unauth(msg):
 @bot_app.on_message(filters.command("status"))
 async def status_cmd(client, message):
     if not is_sudo(message): 
-        unauth_msg = await bot_app.send_message(
-            message.chat.id, 
-            UNAUTH_MSG, 
-            reply_parameters=ReplyParameters(message_id=message.id)
-        )
+        unauth_msg = await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
         asyncio.create_task(auto_delete_unauth(unauth_msg))
         return
-    
     if AppState.task_state != TaskState.IDLE:
         text = AppState.status_snapshot or (
             f"🌐 <b><u>Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs</u></b> 🌐\n\n"
@@ -66,16 +56,9 @@ async def status_cmd(client, message):
         )
     else:
         text = get_idle_text()
-    
-    msg = await bot_app.send_message(
-        message.chat.id, 
-        text, 
-        reply_parameters=ReplyParameters(message_id=message.id)
-    )
-    
-    for _ in range(6):
-        await asyncio.sleep(5)
-        
+    msg = await bot_app.send_message(message.chat.id, text, reply_parameters=ReplyParameters(message_id=message.id))
+    for _ in range(15):
+        await asyncio.sleep(2)
         if AppState.task_state != TaskState.IDLE:
             new_text = AppState.status_snapshot or (
                 f"🌐 <b><u>Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs</u></b> 🌐\n\n"
@@ -84,22 +67,14 @@ async def status_cmd(client, message):
             )
         else:
             new_text = get_idle_text()
-
         if new_text != text:
             try:
                 await msg.edit_text(new_text)
                 text = new_text
-            except MessageNotModified:
-                pass
-            except FloodWait as e:
-                wait_time = getattr(e, "value", getattr(e, "x", 5))
-                await asyncio.sleep(wait_time)
-            except Exception as e:
-                error_str = str(e).upper()
-                if "MESSAGE_ID_INVALID" in error_str or "DELETED" in error_str:
-                    break
-                logger.debug(f"Status edit skipped: {e}")
-    
+            except MessageNotModified: pass
+            except FloodWait as e: await asyncio.sleep(getattr(e, "value", getattr(e, "x", 5)))
+            except (MessageDeleted, MessageIdInvalid): break
+            except Exception as e: logger.debug(f"Status edit skipped: {e}")
     try: await message.delete()
     except Exception: pass
     try: await msg.delete()
