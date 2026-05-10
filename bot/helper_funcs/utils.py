@@ -48,8 +48,10 @@ async def cpu_monitor():
         try:
             val = await asyncio.to_thread(psutil.cpu_percent, 0.5)
             _cpu_cache = val
-        except Exception:
-            pass
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"CPU Monitor Error: {e}")
         await asyncio.sleep(1.5)
 
 async def kill_running_process():
@@ -93,8 +95,10 @@ def get_ist():
 async def send_log(msg_text: str):
     log_channel = config_data.get("LOG_CHANNEL")
     if log_channel:
-        try: await bot_app.send_message(log_channel, msg_text)
-        except Exception as e: logger.error(f"Failed to send log: {e}")
+        try: 
+            await asyncio.wait_for(bot_app.send_message(log_channel, msg_text), timeout=15)
+        except Exception as e: 
+            logger.error(f"Failed to send log: {e}")
 
 def get_sys_stats():
     cpu  = _cpu_cache                           
@@ -112,6 +116,7 @@ def get_file_info(message):
     media = message.video or message.document
     if not media: return "Unknown", "Unknown"
     size_bytes = media.file_size
+    size_str = "Unknown"   
     if not size_bytes: size_str = "0 B"
     else:
         for unit in ['B','KB','MB','GB','TB']:

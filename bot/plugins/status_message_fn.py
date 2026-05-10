@@ -3,6 +3,7 @@ import json
 import asyncio
 import psutil
 from pyrogram import filters
+from pyrogram.types import ReplyParameters
 from bot import bot_app, config_data
 from bot.helper_funcs.utils import AppState, TaskState, queue, get_sys_stats, get_network_io, get_readable_time, START_TIME
 from bot.helper_funcs.display_progress import humanbytes
@@ -19,12 +20,19 @@ def is_sudo(message):
         try: auth_users = json.loads(auth_users)
         except Exception: auth_users = []
         
-    return user_id in auth_users or user_id == owner_id or chat_id in auth_users
+    if not isinstance(auth_users, list):
+        auth_users = [auth_users] if auth_users else []
+        
+    return user_id in auth_users or user_id == owner_id
 
 @bot_app.on_message(filters.command("status"))
 async def status_cmd(client, message):
     if not is_sudo(message): 
-        return await message.reply(UNAUTH_MSG)
+        return await bot_app.send_message(
+            message.chat.id, 
+            UNAUTH_MSG, 
+            reply_parameters=ReplyParameters(message_id=message.id)
+        )
     
     if AppState.task_state != TaskState.IDLE:
         text = AppState.status_snapshot or (
@@ -49,7 +57,11 @@ async def status_cmd(client, message):
             f"**🏷 Maintained By: @Subhasish_bot**"
         )
     
-    msg = await message.reply(text)
+    msg = await bot_app.send_message(
+        message.chat.id, 
+        text, 
+        reply_parameters=ReplyParameters(message_id=message.id)
+    )
     
     await asyncio.sleep(30)
     try: await message.delete()

@@ -7,7 +7,7 @@ import asyncio
 from functools import wraps
 from pyrogram import filters
 from pyrogram.enums import ButtonStyle
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceReply
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceReply, ReplyParameters
 from bot import bot_app, user_app, config_data
 from bot.config import Config
 from bot.helper_funcs.utils import AppState, TaskState, queue, get_file_info, kill_running_process
@@ -38,7 +38,6 @@ def get_bsetting_menu():
 
 def is_sudo(cb):
     user_id = cb.from_user.id
-    chat_id = cb.message.chat.id
     auth_users = config_data.get("AUTH_USERS", [])
     owner_id = config_data.get("OWNER_ID", 0)
     
@@ -46,7 +45,7 @@ def is_sudo(cb):
         try: auth_users = json.loads(auth_users)
         except Exception: auth_users = []
         
-    return user_id in auth_users or user_id == owner_id or chat_id in auth_users
+    return user_id in auth_users or user_id == owner_id
 
 def safe_callback(func):
     @wraps(func)
@@ -136,7 +135,12 @@ async def panel_handler(client, cb):
         if not is_sudo(cb): return await cb.answer(UNAUTH_MSG, show_alert=True)
         try: await cb.message.delete()
         except: pass
-        new_status_msg = await bot_app.send_message(cb.message.chat.id, QUEUE_MSG, reply_to_message_id=task['msg'].id)
+        
+        new_status_msg = await bot_app.send_message(
+            cb.message.chat.id, 
+            QUEUE_MSG, 
+            reply_parameters=ReplyParameters(message_id=task['msg'].id)
+        )
         await queue.put((task['msg'], task['name'], ["-map", "0"], new_status_msg))
 
     elif action == "select":
@@ -172,7 +176,13 @@ async def panel_handler(client, cb):
 
     elif action == "input":
         if not is_sudo(cb): return await cb.answer(UNAUTH_MSG, show_alert=True)
-        prompt = await cb.message.reply("Reply with indexes (e.g. 0,2,4):", quote=True, reply_markup=ForceReply(selective=True))
+        
+        prompt = await bot_app.send_message(
+            cb.message.chat.id,
+            "Reply with indexes (e.g. 0,2,4):",
+            reply_parameters=ReplyParameters(message_id=cb.message.id),
+            reply_markup=ForceReply(selective=True)
+        )
         AppState.awaiting_index[cb.message.chat.id] = {"tid": tid, "menu_msg_id": prompt.id, "stream_msg_id": cb.message.id}
 
 @bot_app.on_callback_query(filters.regex(r"^bsetting_(.*)"))
@@ -271,7 +281,16 @@ async def cancel_running_cb(client, cb):
     if not is_sudo(cb): return await cb.answer(UNAUTH_MSG, show_alert=True)
     if AppState.task_state == TaskState.IDLE: return await cb.answer("No active task.", show_alert=True)
     btn = InlineKeyboardMarkup([[InlineKeyboardButton("Yes ✅", callback_data="confirm_cancel_yes", style=ButtonStyle.SUCCESS), InlineKeyboardButton("No ❌", callback_data="confirm_cancel_no", style=ButtonStyle.DANGER)]])
-    prompt = await bot_app.send_message(cb.message.chat.id, Localisation.CANCEL_PROMPT, reply_to_message_id=AppState.active_origin_msg.id if AppState.active_origin_msg else None, reply_markup=btn)
+    
+    reply_params = ReplyParameters(message_id=AppState.active_origin_msg.id) if AppState.active_origin_msg else None
+    
+    prompt = await bot_app.send_message(
+        cb.message.chat.id, 
+        Localisation.CANCEL_PROMPT, 
+        reply_parameters=reply_params, 
+        reply_markup=btn
+    )
+    
     async def auto_delete_prompt(msg):
         await asyncio.sleep(10)
         try: await msg.delete()

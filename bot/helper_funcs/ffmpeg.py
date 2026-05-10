@@ -7,7 +7,7 @@ import signal
 import socket
 from datetime import datetime, timezone, timedelta
 from pyrogram.enums import ButtonStyle
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyParameters
 from bot import bot_app, user_app, logger, config_data
 from bot.config import Config
 from bot.localisation import Localisation
@@ -37,7 +37,7 @@ async def abort_current_task(status_msg=None, file_path=None, out=None, chat_id=
             done_msg = await bot_app.send_message(
                 chat_id,
                 "🛑 **Task Cancelled.**",
-                reply_to_message_id=AppState.active_origin_msg.id
+                reply_parameters=ReplyParameters(message_id=AppState.active_origin_msg.id)
             )
             asyncio.create_task(delete_message_later(done_msg, 10))
     except: pass
@@ -51,7 +51,6 @@ async def abort_current_task(status_msg=None, file_path=None, out=None, chat_id=
     AppState.task_kind = "compress"
 
 def _find_free_port() -> int:
-    """Bind to port 0 and let the OS assign an ephemeral port, then return it."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -64,10 +63,6 @@ async def start_tg_http_proxy(
     file_size: int,
     progress_dict: dict
 ) -> asyncio.AbstractServer:
-    """
-    Minimal asyncio TCP server that exposes the Telegram file over HTTP/1.1
-    with STRICT byte-Range support to prevent over-downloading.
-    """
     BLOCK_SIZE: int = 1024 * 1024  
 
     async def _handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -222,8 +217,10 @@ async def worker():
         file_path = None
         out = None
         actual_thumb = None 
+        files_to_upload = []
         
-        custom_thumb = os.path.join(Config.THUMB_DIR, f"{msg.from_user.id}.jpg")
+        user_id = msg.from_user.id if msg.from_user else 0
+        custom_thumb = os.path.join(Config.THUMB_DIR, f"{user_id}.jpg")
         default_thumb = os.path.join(Config.ENV_DIR, "thumb.jpg")
         
         try:
@@ -269,7 +266,7 @@ async def worker():
             vf_filters = [f"scale={res}"]
             watermark = str(config_data.get("WATERMARK_TEXT", "None"))
             if watermark.lower() != "none" and watermark.strip() != "":
-                clean_wm = watermark.replace("'", "").replace(":", "") 
+                clean_wm = re.sub(r"[\\'%:,\[\]]", "", watermark)
                 vf_filters.append(f"drawtext=text='{clean_wm}':fontcolor=white:fontsize=24:x=15:y=15:box=1:boxcolor=black@0.5")
                 
             vf_string = ",".join(vf_filters)
@@ -423,7 +420,7 @@ async def worker():
                 split_time = "01:00:00" 
                 
                 if duration_sec > 0:
-                    safe_split_sec = int((MAX_SIZE / final_size) * duration_sec)
+                    safe_split_sec = max(30, int((MAX_SIZE / final_size) * duration_sec))
                     st_h, st_rem = divmod(safe_split_sec, 3600)
                     st_m, st_s = divmod(st_rem, 60)
                     split_time = f"{st_h:02d}:{st_m:02d}:{st_s:02d}"
@@ -475,13 +472,13 @@ async def worker():
                         uploaded_msg = await active_client.send_document(
                             chat_id=msg.chat.id, document=upload_file, thumb=actual_thumb, caption=final_caption, force_document=True,
                             progress=progress_bar, progress_args=("Uploading", status_msg, upload_start, last_up_time),
-                            reply_to_message_id=msg.id
+                            reply_parameters=ReplyParameters(message_id=msg.id)
                         )
                     else:
                         uploaded_msg = await active_client.send_video(
                             chat_id=msg.chat.id, video=upload_file, thumb=actual_thumb, caption=final_caption,
                             progress=progress_bar, progress_args=("Uploading", status_msg, upload_start, last_up_time),
-                            reply_to_message_id=msg.id
+                            reply_parameters=ReplyParameters(message_id=msg.id)
                         )
                         
                     if uploaded_msg:
@@ -492,11 +489,11 @@ async def worker():
 
                 except asyncio.CancelledError:
                     upload_aborted = True
-                    await abort_current_task(status_msg, upload_file, chat_id=chat_id_target)
+                    await abort_current_task(status_msg, file_path, out, chat_id=chat_id_target)
                 except Exception as e:
                     if AppState.cancel_task or "Cancelled" in str(e) or "400" in str(e):
                         upload_aborted = True
-                        await abort_current_task(status_msg, upload_file, chat_id=chat_id_target)
+                        await abort_current_task(status_msg, file_path, out, chat_id=chat_id_target)
                     else:
                         await status_msg.edit(Localisation.UPLOAD_FAILED)
                         await send_log(f"**Upload Stopped, Bot is Free Now !!** \n\nProcess Done at {get_ist()}\nError: {e}")
@@ -517,6 +514,9 @@ async def worker():
         finally: 
             await kill_running_process()
             if file_path and os.path.exists(file_path): os.remove(file_path)
+            if out and os.path.exists(out): os.remove(out)
+            for f in files_to_upload:
+                if os.path.exists(f): os.remove(f)
             if actual_thumb and actual_thumb != custom_thumb and actual_thumb != default_thumb and os.path.exists(actual_thumb): 
                 os.remove(actual_thumb)
             

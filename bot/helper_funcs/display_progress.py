@@ -2,6 +2,7 @@ import time
 import os
 import math
 import asyncio
+import psutil
 from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.helper_funcs.utils import AppState, get_sys_stats, START_TIME, get_readable_time
@@ -31,7 +32,6 @@ def make_bar(percent):
 
 def render_active_status(percent, done_str, total_str, eta_str, speed_str, elapsed_str, display_status=None):
     cpu, mem, disk = get_sys_stats()
-    import psutil
     free_disk_gb = round(psutil.disk_usage('/').free / (1024**3), 2)
     uptime_str = get_readable_time((time.time() - START_TIME) * 1000)
     net = psutil.net_io_counters()
@@ -59,9 +59,11 @@ async def progress_bar(current, total, status_text, message, start_time, last_up
 
     now = time.time()
     if round((now - last_update_time[0])) >= 5 or current == total:
-        percent = current * 100 / total
-        speed = current / (now - start_time)
-        eta_ms = round((total - current) / speed) * 1000 if speed > 0 else 0
+        safe_total = max(total, 1)
+        percent = current * 100 / safe_total
+        elapsed = max(now - start_time, 0.001)
+        speed = current / elapsed
+        eta_ms = round((safe_total - current) / speed) * 1000 if speed > 0 else 0
         
         cpu, mem, disk = get_sys_stats()
         
