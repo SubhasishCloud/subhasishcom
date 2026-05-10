@@ -4,7 +4,7 @@ import asyncio
 import psutil
 from pyrogram import filters
 from pyrogram.types import ReplyParameters
-from pyrogram.errors import MessageNotModified, FloodWait, MessageDeleted, MessageIdInvalid
+from pyrogram.errors import MessageNotModified, FloodWait
 from bot import bot_app, config_data, logger
 from bot.helper_funcs.utils import AppState, TaskState, queue, get_sys_stats, get_network_io, get_readable_time, START_TIME
 from bot.helper_funcs.display_progress import humanbytes
@@ -94,9 +94,10 @@ async def status_cmd(client, message):
             except FloodWait as e:
                 wait_time = getattr(e, "value", getattr(e, "x", 5))
                 await asyncio.sleep(wait_time)
-            except (MessageDeleted, MessageIdInvalid):
-                break
             except Exception as e:
+                error_str = str(e).upper()
+                if "MESSAGE_ID_INVALID" in error_str or "DELETED" in error_str:
+                    break
                 logger.debug(f"Status edit skipped: {e}")
     
     try: await message.delete()
