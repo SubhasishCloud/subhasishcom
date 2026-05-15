@@ -13,6 +13,7 @@ import speedtest
 import re 
 import psutil
 import html
+from collections import OrderedDict
 from pyrogram.enums import ButtonStyle
 from pyrogram import filters
 from pyrogram.errors import FloodWait, MessageNotModified
@@ -30,6 +31,17 @@ UNAUTH_MSG = "<b>You are not allowed to do that 🤭</b>"
 SPEEDTEST_LOCK = asyncio.Lock()
 BACKGROUND_TASKS = set()
 
+MESSAGE_LOCKS = {}
+LAST_SENT_TEXT = OrderedDict()
+
+def get_msg_lock(msg_id):
+    if len(MESSAGE_LOCKS) > 500:
+        idle_locks = [k for k, v in list(MESSAGE_LOCKS.items()) if not v.locked()]
+        for k in idle_locks[:50]:
+            MESSAGE_LOCKS.pop(k, None)
+
+    return MESSAGE_LOCKS.setdefault(msg_id, asyncio.Lock())
+
 def _cleanup_task(task):
     BACKGROUND_TASKS.discard(task)
     try:
@@ -39,7 +51,7 @@ def _cleanup_task(task):
     except asyncio.CancelledError:
         pass
 
-def spawn_task(coro, max_timeout=3600):
+def spawn_temporary_task(coro, max_timeout=3600):
     async def watchdog():
         try:
             await asyncio.wait_for(coro, timeout=max_timeout)
@@ -81,7 +93,8 @@ async def auto_clean(msg, message):
         try:
             await msg.delete()
             await message.delete()
-        except Exception: pass
+        except Exception as e:
+            logger.debug(f"auto_clean UI deletion failed: {e}")
 
 @bot_app.on_message(filters.command("start"))
 async def start_cmd(client, message): 
@@ -102,7 +115,7 @@ async def help_cmd(client, message):
         Localisation.HELP_TEXT,
         reply_parameters=ReplyParameters(message_id=message.id)
     )
-    spawn_task(auto_clean(msg, message))
+    spawn_temporary_task(auto_clean(msg, message))
 
 @bot_app.on_message(filters.command("ping"))
 async def ping_cmd(client, message):
@@ -141,7 +154,7 @@ async def ping_cmd(client, message):
         text += f"\n\n{git_info}"
         
     await msg.edit_text(text)
-    spawn_task(auto_clean(msg, message))
+    spawn_temporary_task(auto_clean(msg, message))
 
 @bot_app.on_message(filters.command("settings"))
 async def settings_cmd(client, message):
@@ -165,15 +178,15 @@ async def update_setting(message, key, display_name):
         return await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
     if len(message.command) < 2: 
         msg = await bot_app.send_message(message.chat.id, f"Current {display_name}: `{config_data.get(key)}`", reply_parameters=ReplyParameters(message_id=message.id))
-        return spawn_task(auto_clean(msg, message))
+        return spawn_temporary_task(auto_clean(msg, message))
     val = message.command[1]
     if str(config_data.get(key)) == str(val): 
         msg = await bot_app.send_message(message.chat.id, f"⚠️ {display_name} is already set to `{val}`", reply_parameters=ReplyParameters(message_id=message.id))
-        return spawn_task(auto_clean(msg, message))
+        return spawn_temporary_task(auto_clean(msg, message))
     config_data[key] = val
     Config.save_config(config_data)
     msg = await bot_app.send_message(message.chat.id, f"✅ {display_name} successfully updated to `{val}`.", reply_parameters=ReplyParameters(message_id=message.id))
-    spawn_task(auto_clean(msg, message))
+    spawn_temporary_task(auto_clean(msg, message))
 
 @bot_app.on_message(filters.command("preset"))
 async def preset_cmd(client, message): await update_setting(message, "PRESET", "preset")
@@ -200,7 +213,7 @@ async def clear_cmd(client, message):
             queue.task_done()
             
     msg = await bot_app.send_message(message.chat.id, Localisation.QUEUE_CLEARED, reply_parameters=ReplyParameters(message_id=message.id))
-    spawn_task(auto_clean(msg, message))
+    spawn_temporary_task(auto_clean(msg, message))
 
 @bot_app.on_message(filters.command("cancel"))
 async def cancel_cmd(client, message):
@@ -208,7 +221,7 @@ async def cancel_cmd(client, message):
         return await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
     if AppState.task_state == TaskState.IDLE: 
         msg = await bot_app.send_message(message.chat.id, Localisation.NO_ACTIVE_TASK, reply_parameters=ReplyParameters(message_id=message.id))
-        return spawn_task(auto_clean(msg, message))
+        return spawn_temporary_task(auto_clean(msg, message))
     
     btn = InlineKeyboardMarkup([[InlineKeyboardButton("Yes ✅", callback_data="confirm_cancel_yes", style=ButtonStyle.SUCCESS), InlineKeyboardButton("No ❌", callback_data="confirm_cancel_no", style=ButtonStyle.DANGER)]])
     
@@ -218,7 +231,7 @@ async def cancel_cmd(client, message):
         reply_markup=btn, 
         reply_parameters=ReplyParameters(message_id=message.id)
     )
-    spawn_task(auto_clean(msg, message))
+    spawn_temporary_task(auto_clean(msg, message))
 
 @bot_app.on_message(filters.command("log"))
 async def log_cmd(client, message):
@@ -300,27 +313,61 @@ async def mediainfo_cmd(client, message):
         if real_path and os.path.exists(real_path): os.remove(real_path)
 
 async def safe_edit(msg, text, **kwargs):
+    if not msg or not getattr(msg, "id", None): 
+        return
+
+    msg_id = msg.id
+
+    markup_str = str(kwargs.get('reply_markup', ''))
+    cache_key = f"{text}_{markup_str}"
+
+    if LAST_SENT_TEXT.get(msg_id) == cache_key:
+        LAST_SENT_TEXT.move_to_end(msg_id)
+        return
+
+    if len(LAST_SENT_TEXT) > 500:
+        LAST_SENT_TEXT.popitem(last=False)
+
+    lock = get_msg_lock(msg_id)
+
     try:
-        await msg.edit_text(text, **kwargs)
+        async with lock:
+            await asyncio.wait_for(msg.edit_text(text, **kwargs), timeout=10.0)
+            LAST_SENT_TEXT[msg_id] = cache_key
     except MessageNotModified:
+        LAST_SENT_TEXT[msg_id] = cache_key
+    except asyncio.CancelledError:
+        raise
+    except asyncio.TimeoutError:
         pass
     except FloodWait as e:
-        wait_time = getattr(e, "value", getattr(e, "x", 5))
-        await asyncio.sleep(wait_time)
-        try: 
-            await msg.edit_text(text, **kwargs)
-        except MessageNotModified: 
+        wait_time = int(getattr(e, "value", getattr(e, "x", 5)))
+        for _ in range(wait_time):
+            if AppState.cancel_task:
+                raise asyncio.CancelledError()
+            await asyncio.sleep(1)
+        try:
+            async with lock:
+                await asyncio.wait_for(msg.edit_text(text, **kwargs), timeout=10.0)
+                LAST_SENT_TEXT[msg_id] = cache_key
+        except MessageNotModified:
+            LAST_SENT_TEXT[msg_id] = cache_key
+        except asyncio.CancelledError:
+            raise
+        except asyncio.TimeoutError:
             pass
         except Exception as e: 
             error_str = str(e).upper()
             if "MESSAGE_ID_INVALID" in error_str or "DELETED" in error_str:
-                pass
+                LAST_SENT_TEXT.pop(msg_id, None)
+                MESSAGE_LOCKS.pop(msg_id, None)
             else:
                 logger.exception(f"safe_edit recovery failed: {e}")
     except Exception as e:
         error_str = str(e).upper()
         if "MESSAGE_ID_INVALID" in error_str or "DELETED" in error_str:
-            pass
+            LAST_SENT_TEXT.pop(msg_id, None)
+            MESSAGE_LOCKS.pop(msg_id, None)
         else:
             logger.exception(f"safe_edit initial edit failed: {e}")
 
@@ -349,7 +396,7 @@ async def generate_sample_background(client, target_message, status_msg):
         active_client = user_app if user_app else bot_app
         if not media:
             await safe_edit(status_msg, "⚠️ No media found on this message.")
-            return          
+            return
         file_size: int = media.file_size or 0
 
         # ---------- RESOLVE DURATION ----------
@@ -518,8 +565,8 @@ async def generate_sample_background(client, target_message, status_msg):
             try:
                 proxy_server.close()
                 await proxy_server.wait_closed()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Proxy server close failed: {e}")
             proxy_server = None
             
         if AppState.cancel_task: raise asyncio.CancelledError()
@@ -554,8 +601,8 @@ async def generate_sample_background(client, target_message, status_msg):
                 dim_out = stdout.decode().strip().split('\n')[0].split('x')
                 if len(dim_out) == 2:
                     vid_width, vid_height = int(dim_out[0]), int(dim_out[1])
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Dimension extraction failed: {e}")
                 
         vid_width = vid_width or 1280
         vid_height = vid_height or 720
@@ -596,14 +643,14 @@ async def generate_sample_background(client, target_message, status_msg):
                 upload_task.cancel()
                 try: 
                     await asyncio.wait_for(upload_task, timeout=10)
-                except Exception: 
-                    pass
+                except Exception as e: 
+                    logger.debug(f"Upload task teardown exception caught: {e}")
                 raise asyncio.CancelledError("Upload phase cancelled by user")
             await asyncio.sleep(0.5)
             
-        await upload_task   
+        await upload_task
         try: await status_msg.delete()
-        except Exception: pass
+        except Exception as e: logger.debug(f"Status msg deletion failed: {e}")
 
     except asyncio.CancelledError:
         await abort_current_task(status_msg, probe_path, sample_out, chat_id=target_message.chat.id)
@@ -615,19 +662,21 @@ async def generate_sample_background(client, target_message, status_msg):
             try:
                 proxy_server.close()
                 await proxy_server.wait_closed()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Final proxy cleanup failed: {e}")
             proxy_server = None
             
         for path in filter(None, [probe_path, sample_out]):
             try:
                 if os.path.exists(path): os.remove(path)
-            except Exception: pass
+            except Exception as e: 
+                logger.debug(f"File cleanup failed for {path}: {e}")
                 
         if gen_thumb and os.path.exists(gen_thumb) and gen_thumb != custom_thumb:
             try:
                 os.remove(gen_thumb)
-            except Exception: pass
+            except Exception as e: 
+                logger.debug(f"Thumb cleanup failed: {e}")
                 
         AppState.task_state       = TaskState.IDLE
         AppState.task_kind        = "compress"
@@ -638,6 +687,10 @@ async def generate_sample_background(client, target_message, status_msg):
         AppState.cancel_task      = False
         async with AppState.process_lock:
             AppState.current_process = None
+            
+        if status_msg and getattr(status_msg, "id", None):
+            LAST_SENT_TEXT.pop(status_msg.id, None)
+            MESSAGE_LOCKS.pop(status_msg.id, None)
 
 @bot_app.on_message(filters.command("samplegen"))
 async def samplegen_cmd(client, message):
@@ -658,9 +711,9 @@ async def samplegen_cmd(client, message):
     if getattr(message.reply_to_message, "document", None):
         mime = message.reply_to_message.document.mime_type
         if mime and not mime.startswith("video/"):
-            return await bot_app.send_message(message.chat.id, "⚠️ The replied document is not a valid video format! (e.g. zip/pdf)", reply_parameters=ReplyParameters(message_id=message.id))      
+            return await bot_app.send_message(message.chat.id, "⚠️ The replied document is not a valid video format! (e.g. zip/pdf)", reply_parameters=ReplyParameters(message_id=message.id))
     msg = await bot_app.send_message(message.chat.id, "⏳ **Initializing Fast Sample Generator...** 📡\n", reply_parameters=ReplyParameters(message_id=message.id))
-    spawn_task(generate_sample_background(client, message.reply_to_message, msg))
+    spawn_temporary_task(generate_sample_background(client, message.reply_to_message, msg))
 
 @bot_app.on_message(filters.command("clearlocals"))
 async def clearlocals_cmd(client, message):
@@ -689,7 +742,7 @@ async def restart_cmd(client, message):
             await asyncio.wait_for(proc.communicate(), timeout=30)
         except asyncio.TimeoutError:
             try: os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except Exception: pass
+            except Exception as e: logger.debug(f"Git pull kill failed: {e}")
             logger.error("Git pull timed out and was killed.")
         except Exception as e:
             logger.error(f"❎ **Oops...!! Failed to load the latest data...** ❎ | Reason: {e}")
@@ -719,10 +772,13 @@ async def cancel_all_cmd(client, message):
     
     if AppState.active_status_msg:
         try: await AppState.active_status_msg.delete()
-        except Exception: pass
+        except Exception as e: logger.debug(f"cancelall status deletion failed: {e}")
+
+    MESSAGE_LOCKS.clear()
+    LAST_SENT_TEXT.clear()
         
     msg = await bot_app.send_message(message.chat.id, "⚠️ **ALL TASKS CANCELLED AND QUEUE CLEARED.**", reply_parameters=ReplyParameters(message_id=message.id))
-    spawn_task(delete_message_later(msg, 30))
+    spawn_temporary_task(delete_message_later(msg, 30))
 
 @bot_app.on_message(filters.command("setthumbnail"))
 async def set_thumb(client, message):
@@ -742,22 +798,22 @@ async def del_thumb_cmd(client, message):
     path = os.path.join(Config.THUMB_DIR, f"{message.from_user.id}.jpg")
     if not os.path.exists(path): 
         msg = await bot_app.send_message(message.chat.id, "⚠️ You don't have a custom thumbnail set.", reply_parameters=ReplyParameters(message_id=message.id))
-        return spawn_task(delete_message_later(msg, 30))
+        return spawn_temporary_task(delete_message_later(msg, 30))
         
     btn = InlineKeyboardMarkup([[InlineKeyboardButton("Yes ✅", callback_data="delthumb_yes", style=ButtonStyle.SUCCESS), InlineKeyboardButton("No ❌", callback_data="delthumb_no", style=ButtonStyle.DANGER)]])
     msg = await bot_app.send_message(message.chat.id, Localisation.THUMB_WARNING, reply_markup=btn, reply_parameters=ReplyParameters(message_id=message.id))
-    spawn_task(delete_message_later(msg, 30))
+    spawn_temporary_task(delete_message_later(msg, 30))
 
 @bot_app.on_message(filters.command("speedtest"))
 async def speedtest_cmd(client, message):
     if not is_owner(message): 
-        return await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id)) 
+        return await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
     if SPEEDTEST_LOCK.locked():
-        return await bot_app.send_message(message.chat.id, "⚠️ A speedtest is already running. Please wait...", reply_parameters=ReplyParameters(message_id=message.id))    
+        return await bot_app.send_message(message.chat.id, "⚠️ A speedtest is already running. Please wait...", reply_parameters=ReplyParameters(message_id=message.id))
     msg = await bot_app.send_message(message.chat.id, "⏳ **Running Server Speedtest...**\n✨ 𝘛𝘩𝘪𝘴 𝘵𝘢𝘬𝘦𝘴 𝘢𝘣𝘰𝘶𝘵 20 𝘴𝘦𝘤𝘰𝘯𝘥𝘴 ✨", reply_parameters=ReplyParameters(message_id=message.id))
     try:
         async with SPEEDTEST_LOCK:
-            res = await asyncio.to_thread(run_speedtest)       
+            res = await asyncio.to_thread(run_speedtest)
         d_speed = humanbytes(res['download'] / 8)
         u_speed = humanbytes(res['upload'] / 8)
         ping = res['ping']
@@ -809,7 +865,7 @@ async def sh_handler(client, message):
         result = (stdout.decode() + stderr.decode()).strip() or "Success (No Output)"
     except asyncio.TimeoutError:
         try: os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-        except Exception: pass
+        except Exception as e: logger.debug(f"exec timeout kill failed: {e}")
         result = "⚠️ EXEC TIMEOUT: Command ran for over 120 seconds and was killed to protect the event loop."
     except Exception as e:
         result = str(e)
@@ -906,11 +962,15 @@ async def broadcast_cmd(client, message):
             try:
                 await asyncio.wait_for(bot_app.send_message(user_id, f"📣 **Announcement from Admin:**\n\n{b_msg}"), timeout=10)
                 success += 1
-            except Exception: failed += 1
-        except Exception: failed += 1
+            except Exception as e: 
+                logger.debug(f"Broadcast retry failed for {user_id}: {e}")
+                failed += 1
+        except Exception as e: 
+            logger.debug(f"Broadcast failed for {user_id}: {e}")
+            failed += 1
             
     msg = await bot_app.send_message(message.chat.id, f"✅ **Broadcast Complete!**\n\n🟢 **Success:** `{success}`\n🔴 **Failed:** `{failed}`", reply_parameters=ReplyParameters(message_id=message.id))
-    spawn_task(delete_message_later(msg, 30))
+    spawn_temporary_task(delete_message_later(msg, 30))
 
 @bot_app.on_message(filters.command("bsetting"))
 async def bsetting_cmd(client, message):
@@ -923,42 +983,49 @@ async def bsetting_cmd(client, message):
     )
     await bot_app.send_message(message.chat.id, help_text, reply_markup=get_bsetting_menu(), reply_parameters=ReplyParameters(message_id=message.id))
 
-@bot_app.on_message(filters.text & filters.private, group=1)
+@bot_app.on_message(filters.text, group=1)
 async def bsetting_input_catcher(client, message):
+    if not message.from_user:
+        return
     user_id = message.from_user.id
+    if user_id == 0:
+        return
     
-    if user_id in AppState.bsetting_state and AppState.bsetting_state[user_id].get("step") == "awaiting_value":
-        if (message.text or "").startswith("/"):
-            del AppState.bsetting_state[user_id]
-            return
-            
-        key = AppState.bsetting_state[user_id]["key"]
-        val = message.text.strip()
-        
-        AppState.bsetting_state[user_id]["msg_to_delete"] = message.id
-        
-        if str(config_data.get(key)) == str(val):
-            btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Menu", callback_data="bsetting_back", style=ButtonStyle.PRIMARY), InlineKeyboardButton("❌ Close", callback_data="bsetting_close", style=ButtonStyle.DANGER)]])
-            msg = await bot_app.send_message(message.chat.id, f"⚠️ **{key}** is already set to `{val}`.", reply_markup=btn, reply_parameters=ReplyParameters(message_id=message.id))
-            AppState.bsetting_state[user_id]["bot_msg_to_delete"] = msg.id
-            return
+    try:
+        if user_id in AppState.bsetting_state and AppState.bsetting_state[user_id].get("step") == "awaiting_value":
+            if (message.text or "").startswith("/"):
+                del AppState.bsetting_state[user_id]
+                return
 
-        AppState.bsetting_state[user_id]["pending_value"] = val
-        AppState.bsetting_state[user_id]["step"] = "confirming"
-        
-        sensitive_keys = ["API_ID", "API_HASH", "TG_BOT_TOKEN", "OWNER_ID"]
-        
-        btn = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Yes ✅", callback_data="bsetting_confirm_yes", style=ButtonStyle.SUCCESS),
-             InlineKeyboardButton("No ❌", callback_data="bsetting_confirm_no", style=ButtonStyle.DANGER)],
-            [InlineKeyboardButton("🔙 Back to Menu", callback_data="bsetting_back", style=ButtonStyle.PRIMARY),
-             InlineKeyboardButton("❌ Close", callback_data="bsetting_close", style=ButtonStyle.DANGER)]
-        ])
-        
-        if key in sensitive_keys: text = f"❓ **Confirm {key}**\n\nSensitive credential detected.\nDo you want to securely save this?"
-        elif key == "USER_SESSION_STRING": text = f"❓ **Confirm Update**\n\nNew session string received.\nDo you want to securely save this?"
-        elif key == "AS_DOCUMENT": text = f"❓ **Confirm Update**\n\nYou entered **{val}**.\n✨ 𝘖𝘯𝘭𝘺 𝘵𝘺𝘱𝘦 𝘛𝘳𝘶𝘦 𝘰𝘳 𝘍𝘢𝘭𝘴𝘦 ✨\n\nDo you want to save this?"
-        else: text = f"❓ **Confirm Update**\n\nYou entered a new value for **{key}**:\n`{val}`\n\nDo you want to save this?"
+            key = AppState.bsetting_state[user_id]["key"]
+            val = message.text.strip()
+
+            AppState.bsetting_state[user_id]["msg_to_delete"] = message.id
+
+            if str(config_data.get(key)) == str(val):
+                btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back to Menu", callback_data="bsetting_back"), InlineKeyboardButton("❌ Close", callback_data="bsetting_close", style=ButtonStyle.DANGER)]])
+                msg = await bot_app.send_message(message.chat.id, f"⚠️ **{key}** is already set to `{val}`.", reply_markup=btn, reply_parameters=ReplyParameters(message_id=message.id))
+                AppState.bsetting_state[user_id]["bot_msg_to_delete"] = msg.id
+                return
+
+            AppState.bsetting_state[user_id]["pending_value"] = val
+            AppState.bsetting_state[user_id]["step"] = "confirming"
+
+            sensitive_keys = ["API_ID", "API_HASH", "TG_BOT_TOKEN", "OWNER_ID"]
             
-        msg = await bot_app.send_message(message.chat.id, text, reply_markup=btn, reply_parameters=ReplyParameters(message_id=message.id))
-        AppState.bsetting_state[user_id]["bot_msg_to_delete"] = msg.id
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Yes ✅", callback_data="bsetting_confirm_yes", style=ButtonStyle.SUCCESS),
+                 InlineKeyboardButton("No ❌", callback_data="bsetting_confirm_no", style=ButtonStyle.DANGER)],
+                [InlineKeyboardButton("🔙 Back to Menu", callback_data="bsetting_back"),
+                 InlineKeyboardButton("❌ Close", callback_data="bsetting_close", style=ButtonStyle.DANGER)]
+            ])
+
+            if key in sensitive_keys: text = f"❓ **Confirm {key}**\n\nSensitive credential detected.\nDo you want to securely save this?"
+            elif key == "USER_SESSION_STRING": text = f"❓ **Confirm Update**\n\nNew session string received.\nDo you want to securely save this?"
+            elif key == "AS_DOCUMENT": text = f"❓ **Confirm Update**\n\nYou entered **{val}**.\n✨ 𝘖𝘯𝘭𝘺 𝘵𝘺𝘱𝘦 𝘛𝘳𝘶𝘦 𝘰𝘳 𝘍𝘢𝘭𝘴𝘦 ✨\n\nDo you want to save this?"
+            else: text = f"❓ **Confirm Update**\n\nYou entered a new value for **{key}**:\n`{val}`\n\nDo you want to save this?"
+                
+            msg = await bot_app.send_message(message.chat.id, text, reply_markup=btn, reply_parameters=ReplyParameters(message_id=message.id))
+            AppState.bsetting_state[user_id]["bot_msg_to_delete"] = msg.id
+    except Exception as e:
+        logger.error(f"[BSETTING CATCHER ERROR] {e}")

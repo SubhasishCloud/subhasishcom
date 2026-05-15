@@ -8,7 +8,7 @@ from functools import wraps
 from pyrogram import filters
 from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceReply, ReplyParameters
-from bot import bot_app, user_app, config_data
+from bot import bot_app, user_app, config_data, logger
 from bot.config import Config
 from bot.helper_funcs.utils import AppState, TaskState, queue, get_file_info, kill_running_process
 from bot.helper_funcs.download import get_graph_link
@@ -53,6 +53,8 @@ def safe_callback(func):
         try: await cb.answer()  
         except: pass
         try: return await func(client, cb)
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             try: await cb.message.edit(f"⚠️ **Error Occurred:**\n`{e}`")
             except: pass
@@ -71,7 +73,7 @@ async def panel_handler(client, cb):
         try:
             await cb.message.delete()
             if 'msg' in task: await task['msg'].delete()
-        except: pass
+        except Exception as e: logger.debug(f"Panel close deletion failed: {e}")
         return
 
     if action == "info":
@@ -95,7 +97,7 @@ async def panel_handler(client, cb):
             try: stdout, _ = await asyncio.wait_for(process.communicate(), timeout=30)
             except asyncio.TimeoutError:
                 try: os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-                except: pass
+                except Exception as e: logger.debug(f"MediaInfo timeout kill failed: {e}")
                 raise Exception("MediaInfo Process Timed Out")
                 
             raw_info = stdout.decode('utf-8').strip()
@@ -120,9 +122,13 @@ async def panel_handler(client, cb):
             link = await get_graph_link(content_json, title="Subhasish Encoder Mediainfo", author="Subhasish Encoder")
             btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"panel_back_{tid}")]])
             await cb.message.edit(f"📊 **MediaInfo Link:**\n{link}", reply_markup=btn)
+        except asyncio.CancelledError:
+            raise
         except Exception as e: await cb.message.edit(f"❌ **MediaInfo Error:** `{e}`")
         finally:
-            if os.path.exists(chunk_path): os.remove(chunk_path)
+            if os.path.exists(chunk_path):
+                try: os.remove(chunk_path)
+                except Exception as e: logger.debug(f"Failed to remove probe chunk: {e}")
 
     elif action == "back":
         btn = InlineKeyboardMarkup([
@@ -134,7 +140,7 @@ async def panel_handler(client, cb):
     elif action == "all":
         if not is_sudo(cb): return await cb.answer(UNAUTH_MSG, show_alert=True)
         try: await cb.message.delete()
-        except: pass
+        except Exception as e: logger.debug(f"Panel all deletion failed: {e}")
         
         new_status_msg = await bot_app.send_message(
             cb.message.chat.id, 
@@ -161,7 +167,7 @@ async def panel_handler(client, cb):
             try: stdout, _ = await asyncio.wait_for(process.communicate(), timeout=30)
             except asyncio.TimeoutError:
                 try: os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-                except: pass
+                except Exception as e: logger.debug(f"Stream select timeout kill failed: {e}")
                 raise Exception("FFProbe Process Timed Out")
                 
             streams = stdout.decode('utf-8').strip()
@@ -170,9 +176,13 @@ async def panel_handler(client, cb):
             for s in data: txt += f"Index `{s['index']}`: {s['codec_type'].upper()} ({s.get('tags',{}).get('language','und')})\n"
             btn = InlineKeyboardMarkup([[InlineKeyboardButton("✍️ Input Indexes", callback_data=f"panel_input_{tid}", style=ButtonStyle.PRIMARY)]])
             await cb.message.edit(txt, reply_markup=btn)
+        except asyncio.CancelledError:
+            raise
         except Exception as e: await cb.message.edit(f"❌ **Stream Select Error:** `{e}`")
         finally:
-            if os.path.exists(chunk_path): os.remove(chunk_path)
+            if os.path.exists(chunk_path):
+                try: os.remove(chunk_path)
+                except Exception as e: logger.debug(f"Failed to remove probe chunk: {e}")
 
     elif action == "input":
         if not is_sudo(cb): return await cb.answer(UNAUTH_MSG, show_alert=True)
@@ -241,7 +251,9 @@ async def bsetting_cb(client, cb):
             else: await cb.message.edit(f"✅ **{key}** successfully updated to `{v}`.\n\n✨ **𝘛𝘺𝘱𝘦 /𝘳𝘦𝘴𝘵𝘢𝘳𝘵 𝘵𝘰 𝘢𝘱𝘱𝘭𝘺.** ✨", reply_markup=btn)
             if "msg_to_delete" in AppState.bsetting_state[user_id]:
                 try: await client.delete_messages(chat_id=cb.message.chat.id, message_ids=AppState.bsetting_state[user_id]["msg_to_delete"])
-                except: pass
+                except Exception as e: logger.debug(f"Delete msg_to_delete failed: {e}")
+        except asyncio.CancelledError:
+            raise
         except Exception as e: await cb.message.edit(f"❌ **Error formatting variable:**\n{e}")
         del AppState.bsetting_state[user_id]
 
@@ -249,7 +261,7 @@ async def bsetting_cb(client, cb):
         if user_id in AppState.bsetting_state: 
             if "msg_to_delete" in AppState.bsetting_state[user_id]:
                 try: await client.delete_messages(chat_id=cb.message.chat.id, message_ids=AppState.bsetting_state[user_id]["msg_to_delete"])
-                except: pass
+                except Exception as e: logger.debug(f"Delete msg_to_delete failed: {e}")
             del AppState.bsetting_state[user_id]
         await cb.message.edit("❌ Update cancelled.")
         await asyncio.sleep(2)
@@ -259,13 +271,13 @@ async def bsetting_cb(client, cb):
         if user_id in AppState.bsetting_state: 
             if "msg_to_delete" in AppState.bsetting_state[user_id]:
                 try: await client.delete_messages(chat_id=cb.message.chat.id, message_ids=AppState.bsetting_state[user_id]["msg_to_delete"])
-                except: pass
+                except Exception as e: logger.debug(f"Delete msg_to_delete failed: {e}")
             del AppState.bsetting_state[user_id]
         if action == "close":
             try:
                 await cb.message.delete()
                 if cb.message.reply_to_message: await cb.message.reply_to_message.delete()
-            except: pass
+            except Exception as e: logger.debug(f"Bsetting close deletion failed: {e}")
             return
        
         help_text = (
@@ -294,7 +306,7 @@ async def cancel_running_cb(client, cb):
     async def auto_delete_prompt(msg):
         await asyncio.sleep(10)
         try: await msg.delete()
-        except: pass
+        except Exception as e: logger.debug(f"Cancel prompt auto-delete failed: {e}")
     asyncio.create_task(auto_delete_prompt(prompt))
 
 @bot_app.on_callback_query(filters.regex(r"^confirm_cancel_(.*)"))
@@ -309,11 +321,11 @@ async def confirm_cancel_cb(client, cb):
             AppState.cancel_task = True
             await kill_running_process()
             try: await cb.message.delete()
-            except: pass
+            except Exception as e: logger.debug(f"Confirm cancel deletion failed: {e}")
         else: await cb.message.edit(Localisation.NO_ACTIVE_TASK)
     else:
         try: await cb.message.delete()
-        except: pass
+        except Exception as e: logger.debug(f"Confirm cancel NO deletion failed: {e}")
 
 @bot_app.on_callback_query(filters.regex(r"^delthumb_(.*)"))
 @safe_callback
@@ -323,10 +335,12 @@ async def delthumb_cb(client, cb):
     action = cb.matches[0].group(1)
     if action == "yes":
         path = os.path.join(Config.THUMB_DIR, f"{user_id}.jpg")
-        if os.path.exists(path): os.remove(path)
+        if os.path.exists(path): 
+            try: os.remove(path)
+            except Exception as e: logger.debug(f"Failed to remove thumb: {e}")
         await cb.message.edit(Localisation.THUMB_REMOVED)
     else:
         await cb.message.edit("❌ Thumbnail deletion cancelled.")
         await asyncio.sleep(2)
         try: await cb.message.delete()
-        except: pass
+        except Exception as e: logger.debug(f"Thumb cancel msg deletion failed: {e}")
