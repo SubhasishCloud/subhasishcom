@@ -30,7 +30,6 @@ from bot.helper_funcs.ffmpeg import abort_current_task, take_screen_shot, start_
 UNAUTH_MSG = "<b>You are not allowed to do that 🤭</b>"
 SPEEDTEST_LOCK = asyncio.Lock()
 BACKGROUND_TASKS = set()
-
 MESSAGE_LOCKS = {}
 LAST_SENT_TEXT = OrderedDict()
 
@@ -87,14 +86,25 @@ def get_uptime():
     uptime_ms = int((time.time() - START_TIME) * 1000)
     return get_readable_time(uptime_ms)
 
+async def safe_delete(msg, log_context="Message"):
+    """Enterprise helper to silently delete message objects without log spam."""
+    if not msg: 
+        return
+    try: await msg.delete()
+    except Exception as e: logger.debug(f"{log_context} deletion failed: {e}")
+
+async def safe_delete_by_id(client, chat_id, msg_id, log_context="Message ID"):
+    """Enterprise helper to cleanly delete messages by ID without wasting API GET calls."""
+    if not msg_id: 
+        return
+    try: await client.delete_messages(chat_id=chat_id, message_ids=msg_id)
+    except Exception as e: logger.debug(f"{log_context} deletion failed: {e}")
+
 async def auto_clean(msg, message):
     await asyncio.sleep(30)
     if AppState.task_state == TaskState.IDLE and queue.qsize() == 0:
-        try:
-            await msg.delete()
-            await message.delete()
-        except Exception as e:
-            logger.debug(f"auto_clean UI deletion failed: {e}")
+        await safe_delete(msg, "auto_clean msg")
+        await safe_delete(message, "auto_clean user message")
 
 @bot_app.on_message(filters.command("start"))
 async def start_cmd(client, message): 
