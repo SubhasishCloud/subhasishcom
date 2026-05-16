@@ -155,9 +155,9 @@ async def download_media_chunk(active_client, message, chunk_path, limit_bytes=2
 
 def format_mediainfo_output(raw_info: str, file_name: str, size_str: str) -> list:
     """Universal helper to clean up mediainfo regex output and format it for Telegraph/Graph APIs."""
-    raw_info = re.sub(r"^(Conformance errors|General compliance|IsTruncated|FileExtension_Invalid|Overall bit rate)\s*:.*$\n?", "", raw_info, flags=re.MULTILINE)
-    raw_info = re.sub(r"^Complete name\s*:.*$", f"Complete name                            : {file_name}", raw_info, flags=re.MULTILINE)
-    raw_info = re.sub(r"^File size\s*:.*$", f"File size                                : {size_str}", raw_info, flags=re.MULTILINE)
+    raw_info = re.sub(r"^\s*(Conformance errors|General compliance|IsTruncated|FileExtension_Invalid|Overall bit rate|Matroska)\s*:.*$\n?", "", raw_info, flags=re.MULTILINE)
+    raw_info = re.sub(r"^\s*Complete name\s*:.*$", f"Complete name                            : {file_name}", raw_info, flags=re.MULTILINE)
+    raw_info = re.sub(r"^\s*File size\s*:.*$", f"File size                                : {size_str}", raw_info, flags=re.MULTILINE)
     
     content_json = [{"tag": "h3", "children": [file_name]}]
     current_pre = ""
