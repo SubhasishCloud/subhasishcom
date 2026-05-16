@@ -457,6 +457,7 @@ async def generate_sample_background(client, target_message, status_msg):
             "-ss", f"{start_time_cut:.3f}",   
             "-i", file_url,
             "-t",  str(SAMPLE_DURATION),
+            "-map", "0",
             "-c",  "copy",                     
             "-avoid_negative_ts", "make_zero",
             "-y", sample_out,
