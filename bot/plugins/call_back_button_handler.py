@@ -10,7 +10,7 @@ from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceReply, ReplyParameters
 from bot import bot_app, user_app, config_data, logger
 from bot.config import Config
-from bot.helper_funcs.utils import AppState, TaskState, queue, get_file_info, kill_running_process
+from bot.helper_funcs.utils import AppState, TaskState, queue, get_file_info, kill_running_process, download_media_chunk, format_mediainfo_output
 from bot.helper_funcs.download import get_graph_link
 from bot.localisation import Localisation
 
@@ -37,15 +37,14 @@ def get_bsetting_menu():
     ])
 
 def is_sudo(cb):
-    user_id = cb.from_user.id
+    user_id = cb.from_user.id if cb.from_user else 0
     auth_users = config_data.get("AUTH_USERS", [])
-    owner_id = config_data.get("OWNER_ID", 0)
     
     if isinstance(auth_users, str):
         try: auth_users = json.loads(auth_users)
-        except Exception: auth_users = []
-        
-    return user_id in auth_users or user_id == owner_id
+        except Exception as e: logger.debug(f"AUTH_USERS parse error: {e}"); auth_users = []
+
+    return user_id in auth_users or user_id == config_data.get("OWNER_ID", 0)
 
 def safe_callback(func):
     @wraps(func)
@@ -56,10 +55,12 @@ def safe_callback(func):
 
         async def tracked_answer(*args, **kwargs):
             nonlocal answered
-            result = await original_answer(*args, **kwargs)
-            answered = True  
-            return result
-
+            if answered: return True
+            answered = True
+            try:
+                return await original_answer(*args, **kwargs)
+            except Exception as e:
+                logger.debug(f"Tracked answer skipped: {e}"); return False
         cb.answer = tracked_answer
 
         try: 
@@ -69,13 +70,15 @@ def safe_callback(func):
         except Exception as e:
             logger.exception(f"Callback error in {func.__name__}: {e}")
             if not answered:
-                try: await original_answer(f"⚠️ Error: {str(e)[:50]}", show_alert=True)
-                except: pass
-            await safe_edit(cb.message, f"⚠️ **Error Occurred:**\n`{e}`")
+                try: await cb.answer(f"⚠️ Error: {str(e)[:50]}", show_alert=True)
+                except Exception as inner_e: logger.debug(f"safe_callback answer fallback failed: {inner_e}")
+            try: await safe_edit(cb.message, f"⚠️ **Error Occurred:**\n`{e}`")
+            except Exception as inner_e: logger.debug(f"safe_callback edit fallback failed: {inner_e}")
         finally:
             if not answered:
-                try: await original_answer()
-                except: pass
+                try: await cb.answer()
+                except Exception as e: logger.debug(f"safe_callback final cleanup answer failed: {e}")
+            cb.answer = original_answer
     return wrapper
 
 @bot_app.on_callback_query(filters.regex(r"^panel_(close|info|back|all|select|input)_(.+)$"))
@@ -109,13 +112,8 @@ async def panel_handler(client, cb):
         
         try:
             active_client = user_app if user_app else bot_app
-            with open(chunk_path, "wb") as f:
-                dl_size = 0
-                async for chunk in active_client.stream_media(task['msg']):
-                    f.write(chunk)
-                    dl_size += len(chunk)
-                    if dl_size >= 25 * 1024 * 1024: break
-                        
+            await download_media_chunk(active_client, task['msg'], chunk_path)
+            
             size_str, _ = get_file_info(task['msg'])
             
             process = await asyncio.create_subprocess_exec(
@@ -132,29 +130,14 @@ async def panel_handler(client, cb):
                         pass
                     except Exception as e:
                         logger.debug(f"MediaInfo kill failed: {e}")
-                    await process.wait()
+                    try: await asyncio.wait_for(process.wait(), timeout=5.0)
+                    except Exception as e: logger.debug(f"MediaInfo wait timeout/failed: {e}")
                 
             raw_info = stdout.decode('utf-8', errors='replace').strip()
-            raw_info = re.sub(r"Complete name\s+:\s+.*", f"Complete name                            : {task.get('name', 'video.mp4')}", raw_info)
-            raw_info = re.sub(r"File size\s+:\s+.*", f"File size                                : {size_str}", raw_info)
-            
-            content_json = [{"tag": "h3", "children": [task.get('name', 'video.mp4')]}]
-            current_pre = ""
-            for line in raw_info.split('\n'):
-                clean_line = line.strip()
-                if clean_line in ["General", "Video", "Text", "Menu"] or clean_line.startswith("Audio"):
-                    if current_pre:
-                        content_json.append({"tag": "pre", "children": [current_pre]})
-                        current_pre = ""
-                    icon = "📄" if clean_line == "General" else "🎬" if clean_line == "Video" else "💬" if clean_line == "Text" else "📑" if clean_line == "Menu" else "🔊"
-                    content_json.append({"tag": "h3", "children": [f"{icon} {clean_line}"]})
-                else:
-                    if line.strip(): current_pre += line + "\n"
-            
-            if current_pre: content_json.append({"tag": "pre", "children": [current_pre]})
+            real_name = task.get('name', 'video.mp4')
+            content_json = format_mediainfo_output(raw_info, real_name, size_str)
             
             link = await get_graph_link(content_json, title="Subhasish Encoder Mediainfo", author="Subhasish Encoder")
-            btn = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Back", callback_data=f"panel_back_{tid}")]])
             await safe_edit(cb.message, f"📊 **MediaInfo Link:**\n{link}", reply_markup=btn)
         except asyncio.CancelledError:
             raise
@@ -175,55 +158,36 @@ async def panel_handler(client, cb):
     elif action == "all":
         if not is_sudo(cb): return await cb.answer(UNAUTH_MSG, show_alert=True)
         await cb.answer("Added to queue!", show_alert=False)
+        try: new_status_msg = await bot_app.send_message(cb.message.chat.id, QUEUE_MSG, reply_parameters=ReplyParameters(message_id=task['msg'].id))
+        except Exception as e: logger.debug(f"Reply fallback triggered: {e}"); new_status_msg = await bot_app.send_message(cb.message.chat.id, QUEUE_MSG)
+        try: await queue.put((task['msg'], task.get('name', 'video.mp4'), ["-map", "0"], new_status_msg))
+        finally:
+            async with AppState.state_lock: AppState.pending_tasks.pop(tid, None)
         await safe_delete(cb.message, log_context="Panel compress message")
-        
-        new_status_msg = await bot_app.send_message(
-            cb.message.chat.id, 
-            QUEUE_MSG, 
-            reply_parameters=ReplyParameters(message_id=task['msg'].id)
-        )
-        await queue.put((task['msg'], task.get('name', 'video.mp4'), ["-map", "0"], new_status_msg))
-
-        async with AppState.state_lock:
-            AppState.pending_tasks.pop(tid, None)
 
     elif action == "select":
-        await cb.answer() 
-        await safe_edit(cb.message, "⏳ Fetching Stream List...")
+        await cb.answer(); await safe_edit(cb.message, "⏳ Fetching Stream List...")
         chunk_path = f"/tmp/probe_{uuid.uuid4().hex}.mkv"
         try:
             active_client = user_app if user_app else bot_app
-            with open(chunk_path, "wb") as f:
-                dl_size = 0
-                async for chunk in active_client.stream_media(task['msg']):
-                    f.write(chunk)
-                    dl_size += len(chunk)
-                    if dl_size >= 25 * 1024 * 1024: break
-                        
-            process = await asyncio.create_subprocess_exec(
-                "ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type,codec_name:stream_tags=language", "-of", "json", chunk_path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True
-            )
+            await download_media_chunk(active_client, task['msg'], chunk_path)
+            
+            process = await asyncio.create_subprocess_exec("ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type,codec_name:stream_tags=language", "-of", "json", chunk_path, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
             try: stdout, _ = await asyncio.wait_for(process.communicate(), timeout=30)
-            except asyncio.TimeoutError:
-                raise Exception("FFProbe Process Timed Out")
+            except asyncio.TimeoutError: raise Exception("FFProbe Process Timed Out")
             finally:
                 if process.returncode is None:
-                    try:
-                        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                    except Exception as e:
-                        logger.debug(f"Stream select kill failed: {e}")
-                    await process.wait()
-                
-            streams = stdout.decode('utf-8', errors='replace').strip()
-            data = json.loads(streams).get("streams", [])
-            txt = "**Available Streams:**\n"
-            for s in data: txt += f"Index `{s['index']}`: {s['codec_type'].upper()} ({s.get('tags',{}).get('language','und')})\n"
+                    try: os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                    except (ProcessLookupError, Exception) as e: logger.debug(f"Stream select kill failed/ignored: {e}")
+                    try: await asyncio.wait_for(process.wait(), timeout=5.0)
+                    except Exception as e: logger.debug(f"Stream select wait timeout/failed: {e}")
+            streams_raw = stdout.decode('utf-8', errors='replace').strip()
+            if not streams_raw: raise Exception("FFprobe returned empty output.")
+            data = json.loads(streams_raw).get("streams", [])
+            txt = "**Available Streams:**\n" + "".join([f"Index `{s['index']}`: {s['codec_type'].upper()} ({s.get('tags',{}).get('language','und')})\n" for s in data])
             btn = InlineKeyboardMarkup([[InlineKeyboardButton("✍️ Input Indexes", callback_data=f"panel_input_{tid}", style=ButtonStyle.PRIMARY)]])
             await safe_edit(cb.message, txt, reply_markup=btn)
-        except asyncio.CancelledError:
-            raise
+        except asyncio.CancelledError: raise
         except Exception as e: await safe_edit(cb.message, f"❌ **Stream Select Error:** `{e}`")
         finally:
             if os.path.exists(chunk_path):
@@ -231,6 +195,7 @@ async def panel_handler(client, cb):
                 except Exception as e: logger.debug(f"Failed to remove probe chunk: {e}")
 
     elif action == "input":
+        if not cb.from_user: return await cb.answer("⚠️ Anonymous admins are not supported for stream selection.", show_alert=True)
         if not is_sudo(cb): return await cb.answer(UNAUTH_MSG, show_alert=True)
         await cb.answer()
         
@@ -259,6 +224,7 @@ async def panel_handler(client, cb):
 @safe_callback
 async def bsetting_cb(client, cb):
     from bot.plugins.commands import safe_edit, safe_delete_by_id, safe_delete
+    if not cb.from_user: return await cb.answer("⚠️ Anonymous admins cannot edit settings.", show_alert=True)
     user_id = cb.from_user.id
     if user_id != config_data.get("OWNER_ID", 0): return await cb.answer(UNAUTH_MSG, show_alert=True)
     action = cb.matches[0].group(1)
@@ -355,7 +321,6 @@ async def bsetting_cb(client, cb):
             await safe_delete(cb.message, log_context="Bsetting close msg")
             if cb.message.reply_to_message: await safe_delete(cb.message.reply_to_message, log_context="Bsetting close reply msg")
             return
-       
         help_text = (
             "**⚙️ Bot Settings Menu**\n"
             "Click a variable below to change its value interactively.\n"
@@ -409,6 +374,7 @@ async def confirm_cancel_cb(client, cb):
 @safe_callback
 async def delthumb_cb(client, cb):
     from bot.plugins.commands import safe_edit, safe_delete
+    if not cb.from_user: return await cb.answer("⚠️ Anonymous admins cannot delete thumbnails.", show_alert=True)
     user_id = cb.from_user.id
     if user_id != config_data.get("OWNER_ID", 0): return await cb.answer(UNAUTH_MSG, show_alert=True)
     action = cb.matches[0].group(1)

@@ -21,7 +21,7 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ForceRepl
 from bot import bot_app, user_app, config_data, logger
 from bot.config import Config
 from bot.localisation import Localisation
-from bot.helper_funcs.utils import AppState, TaskState, queue, START_TIME, get_readable_time, send_log, get_file_info, kill_running_process, delete_message_later, get_network_io
+from bot.helper_funcs.utils import AppState, TaskState, queue, START_TIME, get_readable_time, send_log, get_file_info, kill_running_process, delete_message_later, get_network_io, download_media_chunk, format_mediainfo_output
 from bot.helper_funcs.download import get_graph_link
 from bot.helper_funcs.display_progress import humanbytes, make_bar, time_formatter, render_active_status, get_sys_stats, progress_bar
 from bot.plugins.call_back_button_handler import get_bsetting_menu
@@ -270,57 +270,41 @@ async def mediainfo_cmd(client, message):
         return await bot_app.send_message(message.chat.id, "⚠️ Reply to a video or document to get its MediaInfo.", reply_parameters=ReplyParameters(message_id=message.id))
         
     msg = await bot_app.send_message(message.chat.id, "📝 Probing MediaInfo...", reply_parameters=ReplyParameters(message_id=message.id))
-    real_path = None
+    chunk_path = f"/tmp/probe_{uuid.uuid4().hex}.mkv"
     try:
         active_client = user_app if user_app else bot_app
-        real_path = await active_client.download_media(message.reply_to_message)
-        if not real_path or not os.path.exists(real_path): return await msg.edit_text("❌ Failed to download file for probing.")
+        await download_media_chunk(active_client, message.reply_to_message, chunk_path, limit_bytes=25 * 1024 * 1024)
             
         process = await asyncio.create_subprocess_exec(
-            "mediainfo", real_path,
+            "mediainfo", chunk_path,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             start_new_session=True 
         )
         try: stdout, _ = await asyncio.wait_for(process.communicate(), timeout=30)
         except asyncio.TimeoutError:
-            try: os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            except Exception: pass
             raise Exception("MediaInfo Process Timed Out")
-            
-        raw_info = stdout.decode('utf-8').strip()
-        
-        if real_path and os.path.exists(real_path):
-            os.remove(real_path)
-            real_path = None
-        
+        finally:
+            if process.returncode is None:
+                try:
+                    os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                except ProcessLookupError: pass
+                except Exception as e: logger.debug(f"MediaInfo kill failed: {e}")
+                try: await asyncio.wait_for(process.wait(), timeout=5.0)
+                except Exception as e: logger.debug(f"MediaInfo wait timeout/failed: {e}")
+
+        raw_info = stdout.decode('utf-8', errors='replace').strip()
         size_str, _ = get_file_info(message.reply_to_message)
         real_name = getattr(message.reply_to_message.video or message.reply_to_message.document, 'file_name', 'video.mp4')
-        
-        raw_info = re.sub(r"Complete name\s+:\s+.*", f"Complete name                            : {real_name}", raw_info)
-        raw_info = re.sub(r"File size\s+:\s+.*", f"File size                                : {size_str}", raw_info)
-        
-        content_json = []
-        content_json.append({"tag": "h3", "children": [real_name]})
-
-        current_pre = ""
-        for line in raw_info.split('\n'):
-            clean_line = line.strip()
-            if clean_line in ["General", "Video", "Text", "Menu"] or clean_line.startswith("Audio"):
-                if current_pre:
-                    content_json.append({"tag": "pre", "children": [current_pre]})
-                    current_pre = ""
-                icon = "📄" if clean_line == "General" else "🎬" if clean_line == "Video" else "💬" if clean_line == "Text" else "📑" if clean_line == "Menu" else "🔊"
-                content_json.append({"tag": "h3", "children": [f"{icon} {clean_line}"]})
-            else:
-                if line.strip(): current_pre += line + "\n"
-        
-        if current_pre: content_json.append({"tag": "pre", "children": [current_pre]})
+        content_json = format_mediainfo_output(raw_info, real_name, size_str)
             
-        link = await get_graph_link(content_json, "Subhasish Encoder Mediainfo", "Subhasish Encoder")
+        link = await get_graph_link(content_json, title="Subhasish Encoder Mediainfo", author="Subhasish Encoder")
         await msg.edit_text(f"📊 **MediaInfo Link:**\n{link}")
     except Exception as e:
         await msg.edit_text(f"❌ Error: {e}")
-        if real_path and os.path.exists(real_path): os.remove(real_path)
+    finally:
+        if os.path.exists(chunk_path):
+            try: os.remove(chunk_path)
+            except Exception as e: logger.debug(f"Failed to remove probe chunk: {e}")
 
 async def safe_edit(msg, text, **kwargs):
     if not msg or not getattr(msg, "id", None): 

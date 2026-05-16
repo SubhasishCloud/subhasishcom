@@ -3,6 +3,7 @@ import time
 import os
 import signal
 import psutil
+import re
 from datetime import datetime, timezone, timedelta
 from pyrogram.file_id import FileId
 from bot import bot_app, logger, config_data
@@ -132,3 +133,45 @@ def get_file_info(message):
         dc_str = dc_map.get(dc_id, f"DC{dc_id}")
     except: dc_str = "Unknown DC"
     return size_str, dc_str
+
+async def download_media_chunk(active_client, message, chunk_path, limit_bytes=25 * 1024 * 1024):
+    dl_size = 0
+    stream = active_client.stream_media(message)
+    with open(chunk_path, "wb") as f:
+        try:
+            stream_iter = stream.__aiter__()
+            while True:
+                next_task = asyncio.create_task(stream_iter.__anext__())
+                try: chunk = await asyncio.wait_for(next_task, timeout=15.0)
+                except asyncio.TimeoutError: next_task.cancel(); break
+                except StopAsyncIteration: break
+                f.write(chunk); dl_size += len(chunk)
+                if dl_size >= limit_bytes: break
+        finally:
+            if hasattr(stream, 'aclose'):
+                try: await asyncio.wait_for(stream.aclose(), timeout=5.0)
+                except Exception as e: logger.debug(f"Stream aclose timed out/failed: {e}")
+    return dl_size
+
+def format_mediainfo_output(raw_info: str, file_name: str, size_str: str) -> list:
+    """Universal helper to clean up mediainfo regex output and format it for Telegraph/Graph APIs."""
+    raw_info = re.sub(r"^(Conformance errors|General compliance|IsTruncated|FileExtension_Invalid|Overall bit rate)\s*:.*$\n?", "", raw_info, flags=re.MULTILINE)
+    raw_info = re.sub(r"^Complete name\s*:.*$", f"Complete name                            : {file_name}", raw_info, flags=re.MULTILINE)
+    raw_info = re.sub(r"^File size\s*:.*$", f"File size                                : {size_str}", raw_info, flags=re.MULTILINE)
+    
+    content_json = [{"tag": "h3", "children": [file_name]}]
+    current_pre = ""
+    for line in raw_info.split('\n'):
+        clean_line = line.strip()
+        if clean_line in ["General", "Video", "Text", "Menu"] or clean_line.startswith("Audio"):
+            if current_pre: 
+                content_json.append({"tag": "pre", "children": [current_pre]})
+                current_pre = ""
+            icon = "📄" if clean_line == "General" else "🎬" if clean_line == "Video" else "💬" if clean_line == "Text" else "📑" if clean_line == "Menu" else "🔊"
+            content_json.append({"tag": "h3", "children": [f"{icon} {clean_line}"]})
+        elif line.strip(): 
+            current_pre += line + "\n"
+
+    if current_pre: 
+        content_json.append({"tag": "pre", "children": [current_pre]})
+    return content_json
