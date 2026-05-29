@@ -270,7 +270,6 @@ async def cancel_cmd(client, message):
         reply_parameters=ReplyParameters(message_id=message.id)
     )
     singleton_set(message.chat.id, "cancel", message.id, msg.id)
-    spawn_temporary_task(auto_clean(msg, message))
 
 @bot_app.on_message(filters.command("log"))
 async def log_cmd(client, message):
@@ -292,7 +291,6 @@ async def log_cmd(client, message):
         link = await get_graph_link(content_json, "Subhasish Encoder Logs", "Subhasish Encoder")
         await msg.edit_text(f"📝 **Bot Logs:**\n{link}")
     except Exception as e: await msg.edit_text(f"❌ Failed to fetch logs: {e}")
-    spawn_temporary_task(auto_clean(msg, message))
 
 @bot_app.on_message(filters.command("mediainfo"))
 async def mediainfo_cmd(client, message):
@@ -302,6 +300,7 @@ async def mediainfo_cmd(client, message):
     if not message.reply_to_message or not getattr(message.reply_to_message, 'video', None) and not getattr(message.reply_to_message, 'document', None):
         msg = await bot_app.send_message(message.chat.id, "⚠️ Reply to a video or document to get its MediaInfo.", reply_parameters=ReplyParameters(message_id=message.id))
         singleton_set(message.chat.id, "mediainfo", message.id, msg.id)
+        spawn_temporary_task(auto_clean(msg, message))
         return
         
     msg = await bot_app.send_message(message.chat.id, "📝 Probing MediaInfo...", reply_parameters=ReplyParameters(message_id=message.id))
@@ -341,7 +340,6 @@ async def mediainfo_cmd(client, message):
         if os.path.exists(chunk_path):
             try: os.remove(chunk_path)
             except Exception as e: logger.debug(f"Failed to remove probe chunk: {e}")
-    spawn_temporary_task(auto_clean(msg, message))
 
 async def safe_edit(msg, text, **kwargs):
     if not msg or not getattr(msg, "id", None): 
@@ -813,6 +811,7 @@ async def cancel_all_cmd(client, message):
         return await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
     await singleton_clear(message.chat.id, "cancelall")
     
+    is_idle = (AppState.task_state == TaskState.IDLE and queue.empty())
     while True:
         try:
             queue.get_nowait()
@@ -833,7 +832,7 @@ async def cancel_all_cmd(client, message):
         
     msg = await bot_app.send_message(message.chat.id, "⚠️ **ALL TASKS CANCELLED AND QUEUE CLEARED.**", reply_parameters=ReplyParameters(message_id=message.id))
     singleton_set(message.chat.id, "cancelall", message.id, msg.id)
-    spawn_temporary_task(delete_message_later(msg, 30))
+    if is_idle: spawn_temporary_task(auto_clean(msg, message))
 
 @bot_app.on_message(filters.command("setthumbnail"))
 async def set_thumb(client, message):
@@ -859,12 +858,12 @@ async def del_thumb_cmd(client, message):
     if not os.path.exists(path): 
         msg = await bot_app.send_message(message.chat.id, "⚠️ You don't have a custom thumbnail set.", reply_parameters=ReplyParameters(message_id=message.id))
         singleton_set(message.chat.id, "delthumbnail", message.id, msg.id)
-        return spawn_temporary_task(delete_message_later(msg, 30))
+        return spawn_temporary_task(auto_clean(msg, message))
         
     btn = InlineKeyboardMarkup([[InlineKeyboardButton("Yes ✅", callback_data="delthumb_yes", style=ButtonStyle.SUCCESS), InlineKeyboardButton("No ❌", callback_data="delthumb_no", style=ButtonStyle.DANGER)]])
     msg = await bot_app.send_message(message.chat.id, Localisation.THUMB_WARNING, reply_markup=btn, reply_parameters=ReplyParameters(message_id=message.id))
     singleton_set(message.chat.id, "delthumbnail", message.id, msg.id)
-    return spawn_temporary_task(delete_message_later(msg, 30))
+    return spawn_temporary_task(auto_clean(msg, message))
 
 @bot_app.on_message(filters.command("speedtest"))
 async def speedtest_cmd(client, message):
