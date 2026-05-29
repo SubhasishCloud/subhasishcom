@@ -162,15 +162,18 @@ async def ping_cmd(client, message):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL
             )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
-            git_out = stdout.decode().strip()
-            if "|" in git_out:
-                g_date, g_time = git_out.split("|")
-                git_info = (
-                    f"⭐️ <b><u>Last Updated:</u></b> 🌟\n"
-                    f"✶ <i><b>Date ➝</b></i> {g_date}\n"
-                    f"✶ <i><b>Time ➝</b></i> {g_time}"
-                )
+            try:
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+                git_out = stdout.decode().strip()
+                if "|" in git_out:
+                    g_date, g_time = git_out.split("|")
+                    git_info = (
+                        f"⭐️ <b><u>Last Updated:</u></b> 🌟\n"
+                        f"✶ <i><b>Date ➝</b></i> {g_date}\n"
+                        f"✶ <i><b>Time ➝</b></i> {g_time}"
+                    )
+            except Exception:
+                if proc.returncode is None: proc.kill(); await proc.wait()
         except Exception:
             pass
             
@@ -786,8 +789,15 @@ async def restart_cmd(client, message):
         except asyncio.TimeoutError:
             try: os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             except Exception as e: logger.debug(f"Git pull kill failed: {e}")
+            try: await proc.wait()
+            except: pass
             logger.error("Git pull timed out and was killed.")
         except Exception as e:
+            try:
+                if 'proc' in locals() and proc.returncode is None:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    await proc.wait()
+            except: pass
             logger.error(f"❎ **Oops...!! Failed to load the latest data...** ❎ | Reason: {e}")
             
     restart_path = os.path.join(Config.ENV_DIR, "restart.json")
@@ -924,8 +934,15 @@ async def sh_handler(client, message):
     except asyncio.TimeoutError:
         try: os.killpg(os.getpgid(process.pid), signal.SIGKILL)
         except Exception as e: logger.debug(f"exec timeout kill failed: {e}")
+        try: await process.wait()
+        except: pass
         result = "⚠️ EXEC TIMEOUT: Command ran for over 120 seconds and was killed to protect the event loop."
     except Exception as e:
+        try:
+            if 'process' in locals() and process.returncode is None:
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                await process.wait()
+        except: pass
         result = str(e)
 
     result = html.escape(result)

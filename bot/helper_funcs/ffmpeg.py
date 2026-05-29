@@ -194,6 +194,11 @@ async def take_screen_shot(video_file: str, output_directory: str, ttl: int) -> 
                 pass
         except Exception as e:
             logger.error("take_screen_shot at seek=%ss failed: %s", seek_t, e)
+            try:
+                if 'proc' in locals() and proc and proc.returncode is None:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    await proc.wait()
+            except: pass
             
         if os.path.exists(out_path):
             try:
@@ -299,6 +304,11 @@ async def worker():
                     probe_stdout, _ = await asyncio.wait_for(probe.communicate(), timeout=30)
                     duration_sec = int(float(probe_stdout.decode().strip()))
                 except Exception:
+                    if 'probe' in locals() and probe and probe.returncode is None:
+                        try:
+                            os.killpg(os.getpgid(probe.pid), signal.SIGKILL)
+                            await probe.wait()
+                        except: pass
                     duration_sec = 0
 
             cmd = [
@@ -430,9 +440,19 @@ async def worker():
                     raise Exception(f"FFmpeg exit {process.returncode}. Log: {error_msg}")
                     
             except asyncio.CancelledError:
+                if 'process' in locals() and process and process.returncode is None:
+                    try:
+                        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                        await process.wait()
+                    except: pass
                 await abort_current_task(status_msg, file_path, out, chat_id=chat_id_target)
                 continue
             except Exception as e:
+                if 'process' in locals() and process and process.returncode is None:
+                    try:
+                        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+                        await process.wait()
+                    except: pass
                 if AppState.cancel_task:
                     await abort_current_task(status_msg, file_path, out, chat_id=chat_id_target)
                     continue
@@ -480,7 +500,13 @@ async def worker():
                     stderr=asyncio.subprocess.DEVNULL, 
                     start_new_session=True
                 )
-                await s_proc.communicate()
+                try:
+                    await s_proc.communicate()
+                except Exception:
+                    if s_proc.returncode is None:
+                        try: os.killpg(os.getpgid(s_proc.pid), signal.SIGKILL); await s_proc.wait()
+                        except: pass
+                    raise
                 files_to_upload = sorted([f for f in os.listdir(".") if f.startswith(base_name + "_part") and f.endswith(ext)])
                 os.remove(out) 
 
