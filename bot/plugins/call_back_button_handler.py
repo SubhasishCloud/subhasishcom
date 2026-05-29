@@ -138,6 +138,10 @@ async def panel_handler(client, cb):
             content_json = format_mediainfo_output(raw_info, real_name, size_str)
             
             link = await get_graph_link(content_json, title="Subhasish Encoder Mediainfo", author="Subhasish Encoder")
+            btn = InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔙 Back", callback_data=f"panel_back_{tid}"),
+                 InlineKeyboardButton("❌ Close", callback_data=f"panel_close_{tid}", style=ButtonStyle.DANGER)]
+            ])
             await safe_edit(cb.message, f"📊 **MediaInfo Link:**\n{link}", reply_markup=btn)
         except asyncio.CancelledError:
             raise
