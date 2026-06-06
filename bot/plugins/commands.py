@@ -158,7 +158,7 @@ async def ping_cmd(client, message):
     if os.path.exists(".git"):
         try:
             proc = await asyncio.create_subprocess_exec(
-                "git", "log", "-1", "--format=%cd", "--date=format:%d/%m/%Y|%I:%M %p",
+                "git", "-c", "safe.directory=*", "log", "-1", "--format=%cd", "--date=format:%d/%m/%Y|%I:%M %p",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL
             )
@@ -736,25 +736,26 @@ async def clearlocals_cmd(client, message):
 
 @bot_app.on_message(filters.command("restart"))
 async def restart_cmd(client, message):
-    if not is_sudo(message): 
-        return await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
+    if not is_sudo(message): return await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
     msg = await bot_app.send_message(message.chat.id, "🔄 **Restarting...**", reply_parameters=ReplyParameters(message_id=message.id))
-    
     if os.path.exists(".git"):
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "git", "pull",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                start_new_session=True
-            )
-            await asyncio.wait_for(proc.communicate(), timeout=30)
+            proc = await asyncio.create_subprocess_exec("git", "-c", "safe.directory=*", "pull", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT, start_new_session=True)
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+            git_out = stdout.decode().strip()
+            logger.info(f"Git pull output:\n{git_out}")
+
+            if proc.returncode != 0:
+                await msg.edit_text(f"⚠️ **Git Pull Failed:**\n`{git_out[-1000:]}`\n\n☑️ Restarting Anyway...")
+                await asyncio.sleep(2)
         except asyncio.TimeoutError:
             try: os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
             except Exception as e: logger.debug(f"Git pull kill failed: {e}")
             try: await proc.wait()
             except: pass
             logger.error("Git pull timed out and was killed.")
+            await msg.edit_text("⚠️ **Git Pull Timed Out!**\n☑️ Restarting Anyway...")
+            await asyncio.sleep(2)
         except Exception as e:
             try:
                 if 'proc' in locals() and proc.returncode is None:
@@ -762,6 +763,8 @@ async def restart_cmd(client, message):
                     await proc.wait()
             except: pass
             logger.error(f"❎ **Oops...!! Failed to load the latest data...** ❎ | Reason: {e}")
+            await msg.edit_text(f"⚠️ **Git Pull Error:**\n`{e}`\n\nRestarting Anyway...")
+            await asyncio.sleep(2)
             
     restart_path = os.path.join(Config.ENV_DIR, "restart.json")
     with open(restart_path, "w") as f: 
