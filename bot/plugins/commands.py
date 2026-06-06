@@ -9,7 +9,7 @@ import signal
 import asyncio
 import traceback
 import gc
-import speedtest
+import subprocess
 import re 
 import psutil
 import html
@@ -805,7 +805,7 @@ async def set_thumb(client, message):
         return await bot_app.send_message(message.chat.id, Localisation.INVALID_THUMB, reply_parameters=ReplyParameters(message_id=message.id))
     path = os.path.join(Config.THUMB_DIR, f"{message.from_user.id}.jpg")
     await message.reply_to_message.download(file_name=path)
-    
+
     await bot_app.send_message(message.chat.id, Localisation.THUMB_ADDED, reply_parameters=ReplyParameters(message_id=message.id))
 
 @bot_app.on_message(filters.command("delthumbnail"))
@@ -818,7 +818,7 @@ async def del_thumb_cmd(client, message):
         msg = await bot_app.send_message(message.chat.id, "⚠️ You don't have a custom thumbnail set.", reply_parameters=ReplyParameters(message_id=message.id))
         singleton_set(message.chat.id, "delthumbnail", message.id, msg.id)
         return spawn_temporary_task(auto_clean(msg, message))
-        
+
     btn = InlineKeyboardMarkup([[InlineKeyboardButton("Yes ✅", callback_data="delthumb_yes", style=ButtonStyle.SUCCESS), InlineKeyboardButton("No ❌", callback_data="delthumb_no", style=ButtonStyle.DANGER)]])
     msg = await bot_app.send_message(message.chat.id, Localisation.THUMB_WARNING, reply_markup=btn, reply_parameters=ReplyParameters(message_id=message.id))
     singleton_set(message.chat.id, "delthumbnail", message.id, msg.id)
@@ -826,43 +826,83 @@ async def del_thumb_cmd(client, message):
 
 @bot_app.on_message(filters.command("speedtest"))
 async def speedtest_cmd(client, message):
-    if not is_owner(message): 
-        return await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
-    if SPEEDTEST_LOCK.locked():
-        return await bot_app.send_message(message.chat.id, "⚠️ A speedtest is already running. Please wait...", reply_parameters=ReplyParameters(message_id=message.id))
-    msg = await bot_app.send_message(message.chat.id, "⏳ **Running Server Speedtest...**\n✨ 𝘛𝘩𝘪𝘴 𝘵𝘢𝘬𝘦𝘴 𝘢𝘣𝘰𝘶𝘵 20 𝘴𝘦𝘤𝘰𝘯𝘥𝘴 ✨", reply_parameters=ReplyParameters(message_id=message.id))
+    if not is_sudo(message): return await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
+    if SPEEDTEST_LOCK.locked(): return await bot_app.send_message(message.chat.id, "⚠️ A Speedtest Is Already Running. 𝘗𝘭𝘦𝘢𝘴𝘦 𝘞𝘢𝘪𝘵...!!", reply_parameters=ReplyParameters(message_id=message.id))
+    msg = await bot_app.send_message(message.chat.id, "⏳ **Running Server Speedtest...**\n✨ 𝘛𝘩𝘪𝘴 𝘛𝘢𝘬𝘦𝘴 𝘈𝘣𝘰𝘶𝘵 10 𝘚𝘦𝘤𝘰𝘯𝘥𝘴 ✨", reply_parameters=ReplyParameters(message_id=message.id))
     try:
         async with SPEEDTEST_LOCK:
             res = await asyncio.to_thread(run_speedtest)
-        d_speed = humanbytes(res['download'] / 8)
-        u_speed = humanbytes(res['upload'] / 8)
-        ping = res['ping']
-        
+        d_speed = humanbytes(res.get('download', {}).get('bandwidth', 0))
+        u_speed = humanbytes(res.get('upload', {}).get('bandwidth', 0))
+        idle_latency = round(res.get('ping', {}).get('latency', 0))
+        dl_latency = round(res.get('download', {}).get('latency', {}).get('iqm', 0))
+        ul_latency = round(res.get('upload', {}).get('latency', {}).get('iqm', 0))
+        ping = res.get('ping', {}).get('latency', 0)
+        ping_str = f"{float(ping):.3f}"
+        packet_loss = res.get('packetLoss', 0.0)
+        packet_loss_str = f"{float(packet_loss if packet_loss is not None else 0.0):.1f}"
+        server_location = res.get('server', {}).get('location', 'Unknown')
+        server_country = res.get('server', {}).get('country', 'Unknown')
+        app_name = res.get('app_name', 'Ookla Speedtest CLI')
+        app_version = res.get('app_version', 'Unknown')
+
         text = (
-            f"🚀 <u>**sᴘᴇᴇᴅᴛᴇsᴛ ɪɴғᴏ**</u>\n\n"
+            f"🚀 <u>**ＳＰＥＥＤＴＥＳＴ ＩＮＦＯ**</u>\n\n"
+            f"<b><i>🌐 Connection Metrics</i></b>\n"
             f"🔻 **ᴅᴏᴡɴʟᴏᴀᴅ:** `{d_speed}/s`\n"
-            f"🔺 **ᴜᴘʟᴏᴀᴅ:** `{u_speed}/s`\n"
-            f"📶 **ᴘɪɴɢ:** `{ping} ms`\n"
-            f"🌍 **sᴇʀᴠᴇʀ:** `{res['server']['name']}, {res['server']['country']}`"
+            f"🔺 **ᴜᴘʟᴏᴀᴅ:** `{u_speed}/s`\n\n"
+            f"<b><i>⏱️ Latency & Performance</i></b>\n"
+            f"💤 **ɪᴅʟᴇ:** `{idle_latency} ms`\n"
+            f"⏬ **ᴅᴏᴡɴʟᴏᴀᴅ:** `{dl_latency} ms`\n"
+            f"⏫ **ᴜᴘʟᴏᴀᴅ:** `{ul_latency} ms`\n"
+            f"🛜 **ᴘɪɴɢ:** `{ping_str} ms`\n"
+            f"📉 **ᴘᴀᴄᴋᴇᴛ ʟᴏss:** `{packet_loss_str}%`\n\n"
+            f"<b><i>🗺️ Host Location</i></b>\n"
+            f"🌍 **sᴇʀᴠᴇʀ:** `{server_location}, {server_country}`\n\n"
+            f"<b><i>⚙️ Runner Details</i></b>\n"
+            f"💻 **ᴀᴘᴘʟɪᴄᴀᴛɪᴏɴ:** `{app_name}`\n"
+            f"🏷️ **ᴠᴇʀsɪᴏɴ:** `v{app_version}`"
         )
         await msg.edit_text(text)
     except Exception as e:
         await msg.edit_text(f"❌ **Speedtest Failed:** {e}")
-        
+
 def run_speedtest():
-    st = speedtest.Speedtest(secure=True)
-    st.get_best_server()
-    st.download()
-    st.upload()
-    return st.results.dict()
+    # 1. Auto-grab the Application Name and Version dynamically
+    app_name = "Ookla Speedtest CLI"
+    app_version = "Unknown"
+    try:
+        v_cmd = ["speedtest", "--version"]
+        v_proc = subprocess.Popen(v_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        v_stdout, _ = v_proc.communicate(timeout=10)
+        v_text = v_stdout.decode('utf-8').strip().split('\n')[0]
+        match = re.search(r"^(.*?)\s+([\d\.]+)", v_text)
+        if match: app_name, app_version = match.group(1).strip(), match.group(2).strip()
+    except Exception: pass
+    # 2. Run the actual Speedtest
+    cmd = ["speedtest", "--accept-license", "--accept-gdpr", "-f", "json"]
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        # 60-second timeout prevents deadlocks if the Ookla server hangs
+        stdout, stderr = process.communicate(timeout=60)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        stdout, stderr = process.communicate()
+        raise Exception("Speedtest CLI timed out after 60 seconds.")
+
+    if process.returncode != 0: raise Exception(stderr.decode('utf-8').strip() or "Speedtest CLI failed.")
+    res = json.loads(stdout.decode('utf-8'))
+    # 🛡️ SECURITY: PURGE DANGEROUS DATA
+    res.pop('result', None); res.pop('interface', None); res.pop('isp', None)
+    # Inject the dynamically grabbed version info into the result dictionary
+    res['app_name'] = app_name; res['app_version'] = app_version
+    return res
 
 async def aexec(code, client, message):
     exec_vars = {}
     code_lines = "\n".join([f"    {line}" for line in code.split("\n")])
     exec_code = f"async def __aexec(client, message):\n{code_lines}"
-    
     exec(exec_code, globals().copy(), exec_vars)
-    
     return await exec_vars["__aexec"](client, message)
 
 @bot_app.on_message(filters.command("exec"))

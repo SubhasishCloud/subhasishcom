@@ -43,7 +43,7 @@ sudo apt-get install docker.io docker-compose git -y
 ```
 **Remove Any Existing Repository:**
 ```sh
-sudo rm -rf
+sudo rm -rf subhasishcom
 ```
 *(If you are redeploying or need to clean up an old version of the project before cloning it again, run this command to forcefully remove the old folder)*
 
