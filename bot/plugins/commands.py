@@ -828,7 +828,7 @@ async def del_thumb_cmd(client, message):
 async def speedtest_cmd(client, message):
     if not is_sudo(message): return await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
     if SPEEDTEST_LOCK.locked(): return await bot_app.send_message(message.chat.id, "⚠️ A Speedtest Is Already Running. 𝘗𝘭𝘦𝘢𝘴𝘦 𝘞𝘢𝘪𝘵...!!", reply_parameters=ReplyParameters(message_id=message.id))
-    msg = await bot_app.send_message(message.chat.id, "⏳ **Running Server Speedtest...**\n✨ 𝘛𝘩𝘪𝘴 𝘛𝘢𝘬𝘦𝘴 𝘈𝘣𝘰𝘶𝘵 10 𝘚𝘦𝘤𝘰𝘯𝘥𝘴 ✨", reply_parameters=ReplyParameters(message_id=message.id))
+    msg = await bot_app.send_message(message.chat.id, "⏳ **Running Server Speedtest...**\n✨ 𝘛𝘩𝘪𝘴 𝘛𝘢𝘬𝘦𝘴 𝘈𝘣𝘰𝘶𝘵 30 𝘚𝘦𝘤𝘰𝘯𝘥𝘴...!! ✨", reply_parameters=ReplyParameters(message_id=message.id))
     try:
         async with SPEEDTEST_LOCK:
             res = await asyncio.to_thread(run_speedtest)
