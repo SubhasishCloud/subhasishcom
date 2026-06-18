@@ -21,7 +21,13 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-
+# ===================================================================== #
+# Suppress Pyrogram's Internal System Logs (Connection, Ping etc).      #
+# ===================================================================== #
+logging.getLogger("pyrogram").setLevel(logging.WARNING)
+# ===================================================================== #
+# Comment Out The Line Above To Re-Enable Detailed Pyrogram logs.       #
+# ===================================================================== #
 bot_app = Client(
     os.path.join(Config.ENV_DIR, "encoder_bot"),
     api_id=config_data["API_ID"],
