@@ -1,37 +1,39 @@
-import os
 import asyncio
-import time
+import os
 import re
-import traceback
 import signal
 import socket
-from datetime import datetime, timezone, timedelta
-from pyrogram.enums import ButtonStyle
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyParameters
-from bot import bot_app, user_app, logger, config_data
+import time
+import traceback
+
+from bot import bot_app, config_data, logger, user_app
 from bot.config import Config
+from bot.helper_funcs.display_progress import humanbytes, make_bar, progress_bar, render_active_status, time_formatter
+from bot.helper_funcs.utils import AppState, TaskState, delete_message_later, get_file_info, get_ist, get_sys_stats, kill_running_process, queue, send_log
 from bot.localisation import Localisation
-from bot.helper_funcs.utils import queue, AppState, TaskState, get_ist, send_log, get_sys_stats, get_file_info, kill_running_process, get_readable_time, START_TIME, delete_message_later
-from bot.helper_funcs.display_progress import progress_bar, humanbytes, time_formatter, make_bar, render_active_status
+from contextlib import suppress
+from datetime import UTC, datetime
+from pyrogram.enums import ButtonStyle
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyParameters
 
 async def safe_readline(stream, timeout=10):
     try:
         return await asyncio.wait_for(stream.readline(), timeout=timeout)
-    except asyncio.TimeoutError:
-        return None  
+    except TimeoutError:
+        return None
 
-async def abort_current_task(status_msg=None, file_path=None, out=None, chat_id=None):
+async def abort_current_task(status_msg=None, file_path=None, out=None, chat_id=None) -> None:
     await kill_running_process()
     for p in [file_path, out]:
         try:
             if p and os.path.exists(p): os.remove(p)
         except: pass
-        
+
     target_msg = status_msg or AppState.active_status_msg
     try:
         if target_msg: await target_msg.delete()
     except: pass
-    
+
     try:
         if chat_id and AppState.active_origin_msg:
             done_msg = await bot_app.send_message(
@@ -63,7 +65,7 @@ async def start_tg_http_proxy(
     file_size: int,
     progress_dict: dict
 ) -> asyncio.AbstractServer:
-    BLOCK_SIZE: int = 1024 * 1024  
+    BLOCK_SIZE: int = 1024 * 1024
 
     async def _handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -71,15 +73,15 @@ async def start_tg_http_proxy(
             while b"\r\n\r\n" not in raw:
                 try:
                     part = await asyncio.wait_for(reader.read(8192), timeout=15)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     return
                 if not part:
                     break
                 raw += part
-            
+
             req_start: int = 0
             req_end: int = file_size - 1
-            
+
             for line in raw.decode("utf-8", errors="ignore").split("\r\n"):
                 if line.lower().startswith("range:"):
                     rng = line.split(":", 1)[1].strip()
@@ -90,16 +92,16 @@ async def start_tg_http_proxy(
                         req_start = int(token_start) if token_start else 0
                         req_end = int(token_end) if token_end else file_size - 1
                     break
-            
+
             req_start = max(0, min(req_start, file_size - 1))
             req_end = max(req_start, min(req_end, file_size - 1))
-            
+
             chunk_offset: int = req_start // BLOCK_SIZE
             byte_skip:    int = req_start - (chunk_offset * BLOCK_SIZE)
-            
+
             bytes_to_send = (req_end - req_start) + 1
             chunk_limit = (bytes_to_send + byte_skip) // BLOCK_SIZE + 2
-            
+
             resp_header = (
                 "HTTP/1.1 206 Partial Content\r\n"
                 "Content-Type: application/octet-stream\r\n"
@@ -111,7 +113,7 @@ async def start_tg_http_proxy(
             )
             writer.write(resp_header.encode())
             await writer.drain()
-            
+
             sent_bytes = 0
             stream = active_client.stream_media(target_message, offset=chunk_offset, limit=chunk_limit)
             try:
@@ -119,7 +121,7 @@ async def start_tg_http_proxy(
                 while True:
                     next_task = asyncio.create_task(stream_iter.__anext__())
                     try: chunk = await asyncio.wait_for(next_task, timeout=15.0)
-                    except asyncio.TimeoutError: next_task.cancel(); break
+                    except TimeoutError: next_task.cancel(); break
                     except StopAsyncIteration: break
 
                     if AppState.cancel_task or writer.is_closing():
@@ -137,14 +139,14 @@ async def start_tg_http_proxy(
                         writer.write(chunk)
                         await writer.drain()
                         sent_bytes += len(chunk)
-                        progress_dict["downloaded"] += len(chunk) 
+                        progress_dict["downloaded"] += len(chunk)
                     except (BrokenPipeError, ConnectionResetError, OSError):
                         break
-                    
+
                     if sent_bytes >= bytes_to_send:
                         break
             finally:
-                if hasattr(stream, 'aclose'):
+                if hasattr(stream, "aclose"):
                     try: await asyncio.wait_for(stream.aclose(), timeout=5.0)
                     except Exception as exc: logger.debug(f"[TG_HTTP_PROXY] Stream aclose failed: {exc}")
 
@@ -158,7 +160,7 @@ async def start_tg_http_proxy(
                 await writer.wait_closed()
             except Exception:
                 pass
-                
+
     return await asyncio.start_server(_handler, "127.0.0.1", port)
 
 async def take_screen_shot(video_file: str, output_directory: str, ttl: int) -> str | None:
@@ -170,8 +172,8 @@ async def take_screen_shot(video_file: str, output_directory: str, ttl: int) -> 
             "-ss", str(seek_t),
             "-i",  video_file,
             "-vframes", "1",
-            "-vf", "scale='if(gt(iw,ih),320,-2)':'if(gt(iw,ih),-2,320)'",   
-            "-q:v", "2",             
+            "-vf", "scale='if(gt(iw,ih),320,-2)':'if(gt(iw,ih),-2,320)'",
+            "-q:v", "2",
             "-y", out_path,
         ]
         try:
@@ -185,7 +187,7 @@ async def take_screen_shot(video_file: str, output_directory: str, ttl: int) -> 
             await asyncio.wait_for(proc.communicate(), timeout=20)
             if os.path.exists(out_path) and os.path.getsize(out_path) > 1024:
                 return out_path
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("take_screen_shot: ffmpeg timed out at seek=%ss", seek_t)
             try:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -195,69 +197,67 @@ async def take_screen_shot(video_file: str, output_directory: str, ttl: int) -> 
         except Exception as e:
             logger.error("take_screen_shot at seek=%ss failed: %s", seek_t, e)
             try:
-                if 'proc' in locals() and proc and proc.returncode is None:
+                if "proc" in locals() and proc and proc.returncode is None:
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
                     await proc.wait()
             except: pass
-            
+
         if os.path.exists(out_path):
-            try:
+            with suppress(Exception):
                 os.remove(out_path)
-            except Exception:
-                pass
-                
+
     logger.warning("take_screen_shot: all attempts exhausted for '%s'", video_file)
     return None
 
-async def worker():
-    active_client = user_app if user_app else bot_app
-    
+async def worker() -> None:
+    active_client = user_app or bot_app
+
     while True:
         if AppState.task_state in [TaskState.MERGING, TaskState.SAMPLEGEN]:
             await asyncio.sleep(5)
             continue
         try:
             task = await asyncio.wait_for(queue.get(), timeout=30)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             continue
-            
+
         msg, name, map_args, status_msg = task
         chat_id_target = msg.chat.id
-        
+
         AppState.task_state = TaskState.DOWNLOADING
         AppState.active_file_name = name
         AppState.active_origin_msg = msg
         AppState.active_status_msg = status_msg
         AppState.task_kind = "compress"
-        AppState.cancel_task = False 
-        
+        AppState.cancel_task = False
+
         start_time = time.time()
         last_up = [time.time()]
         file_path = None
         out = None
-        actual_thumb = None 
+        actual_thumb = None
         files_to_upload = []
-        
+
         user_id = msg.from_user.id if msg.from_user else 0
         custom_thumb = os.path.join(Config.THUMB_DIR, f"{user_id}.jpg")
         default_thumb = os.path.join(Config.ENV_DIR, "thumb.jpg")
-        
+
         try:
             now_time = get_ist()
             await send_log(f"**Bot Become Busy Now !!** \n\nDownload Started at {now_time}")
-            
+
             download_cancelled = False
             try:
                 file_path = await active_client.download_media(msg, progress=progress_bar, progress_args=("Downloading", status_msg, start_time, last_up))
             except asyncio.CancelledError: download_cancelled = True
             except Exception as e:
                 if "Cancelled" in str(e) or "400" in str(e): download_cancelled = True
-                else: raise e
-                
+                else: raise
+
             if download_cancelled or AppState.cancel_task:
                 await abort_current_task(status_msg, file_path, chat_id=chat_id_target)
                 continue
-                
+
             if not file_path or not os.path.exists(file_path):
                 await status_msg.edit(Localisation.FILE_NOT_FOUND)
                 await send_log(f"**Download Error, Bot is Free Now !!** \n\nProcess Done at {get_ist()}\nReason: Path not exist")
@@ -268,34 +268,34 @@ async def worker():
             dl_time = int(time.time() - start_time)
             await status_msg.edit(Localisation.DOWNLOADED_SUCCESS.format(time_formatter(dl_time * 1000)))
             await send_log(f"**Download Stopped, Bot is Free Now !!** \n\nProcess Done at {get_ist()}")
-            await asyncio.sleep(2.5) 
-            
+            await asyncio.sleep(2.5)
+
             if AppState.cancel_task:
                 await abort_current_task(status_msg, file_path, chat_id=chat_id_target)
                 continue
-            
+
             base = name.replace(" ", ".").rsplit(".", 1)[0]
             out = f"{base}.Compressed.mkv"
-            
+
             await status_msg.edit(Localisation.COMPRESS_START)
             await send_log(f"**Compressing Video ...** \n\nProcess Started at {get_ist()}")
-            await asyncio.sleep(1) 
+            await asyncio.sleep(1)
 
-            res = str(config_data.get('RESOLUTION', '820x480')).lower().replace("x", ":")
+            res = str(config_data.get("RESOLUTION", "820x480")).lower().replace("x", ":")
             vf_filters = [f"scale={res}"]
             watermark = str(config_data.get("WATERMARK_TEXT", "None"))
             if watermark.lower() != "none" and watermark.strip() != "":
                 clean_wm = re.sub(r"[\\'%:,\[\]]", "", watermark)
                 vf_filters.append(f"drawtext=text='{clean_wm}':fontcolor=white:fontsize=24:x=15:y=15:box=1:boxcolor=black@0.5")
-                
+
             vf_string = ",".join(vf_filters)
-            
+
             try:
                 crf_val = str(float(config_data.get("CRF", "28")))
             except Exception:
                 crf_val = "28"
-            
-            duration_sec = getattr(msg.video, 'duration', 0) if msg.video else 0
+
+            duration_sec = getattr(msg.video, "duration", 0) if msg.video else 0
             if not duration_sec:
                 try:
                     probe = await asyncio.create_subprocess_exec(
@@ -307,26 +307,26 @@ async def worker():
                     probe_stdout, _ = await asyncio.wait_for(probe.communicate(), timeout=30)
                     duration_sec = int(float(probe_stdout.decode().strip()))
                 except Exception:
-                    if 'probe' in locals() and probe and probe.returncode is None:
+                    if "probe" in locals() and probe and probe.returncode is None:
                         try:
                             os.killpg(os.getpgid(probe.pid), signal.SIGKILL)
                             await probe.wait()
                         except: pass
                     duration_sec = 0
 
-            current_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            current_utc = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
             # Block 1: Input & Stream Mapping
-            cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostats", "-nostdin", "-i", file_path] + map_args
+            cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-nostats", "-nostdin", "-i", file_path, *map_args]
             # Block 2: Video Filters & Encoding
             cmd += ["-filter:v:0", vf_string, "-c:v", str(config_data.get("CODEC", "libx265")), "-crf", crf_val, "-preset", str(config_data.get("PRESET", "fast")), "-pix_fmt", "yuv420p", "-b:v", "150k"]
             # Block 3: Audio & Subtitle Encoding
-            cmd += ["-c:a", "libopus", "-b:a", str(config_data.get("AUDIO_BITRATE", "96k")), "-c:s", "copy"]
+            cmd += ["-c:a", "libopus", "-b:a", str(config_data.get("AUDIO_BITRATE", "96k")), "-af", "aformat=channel_layouts=7.1|5.1|stereo|mono", "-c:s", "copy"]
             # Block 4: Metadata, Muxing Rules, & Output File
-            cmd += ["-map_metadata", "-1", "-metadata", f"creation_time={current_utc}", "-write_crc32", "0", "-max_muxing_queue_size", "1024", "-progress", "pipe:1", "-y", out]
+            cmd += ["-map_chapters", "0", "-metadata", f"creation_time={current_utc}", "-write_crc32", "0", "-max_muxing_queue_size", "1024", "-progress", "pipe:1", "-y", out]
 
             encode_start_time = time.time()
             stderr_lines = []
-            async def drain_stderr(proc):
+            async def drain_stderr(proc) -> None:
                 if proc.stderr is None: return
                 try:
                     while True:
@@ -337,16 +337,17 @@ async def worker():
 
             try:
                 process = await asyncio.create_subprocess_exec(
-                    *cmd, 
+                    *cmd,
                     stdin=asyncio.subprocess.DEVNULL,
-                    stdout=asyncio.subprocess.PIPE, 
-                    stderr=asyncio.subprocess.PIPE, 
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
                     start_new_session=True
                 )
+                logger.info(f"ffmpeg_process: {process.pid}")
                 stderr_task = asyncio.create_task(drain_stderr(process))
                 async with AppState.process_lock:
                     AppState.current_process = process
-                last_update_time = time.time() - 10 
+                last_update_time = time.time() - 10
                 last_progress_seen = time.time()
                 last_heartbeat_time = time.time()
                 btn = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 Cancel Task", callback_data="cancel_running", style=ButtonStyle.DANGER)]])
@@ -354,10 +355,11 @@ async def worker():
                 while True:
                     if AppState.cancel_task:
                         await kill_running_process()
-                        raise asyncio.CancelledError("Task Cancelled by User")
+                        can_msg = "Task Cancelled by User"
+                        raise asyncio.CancelledError(can_msg)
 
                     line_bytes = await safe_readline(process.stdout, timeout=5)
-                    
+
                     if line_bytes is None:
                         if process.returncode is not None: break
                         if time.time() - last_progress_seen > 15 and time.time() - last_heartbeat_time > 10:
@@ -371,11 +373,11 @@ async def worker():
                                 )
                                 last_heartbeat_time = time.time()
                             except Exception: pass
-                        continue 
+                        continue
                     if line_bytes == b"":
-                        break    
+                        break
 
-                    line_str = line_bytes.decode('utf-8', errors='ignore').strip()
+                    line_str = line_bytes.decode("utf-8", errors="ignore").strip()
                     if not line_str: continue
 
                     if line_str.startswith("out_time_ms="):
@@ -425,20 +427,29 @@ async def worker():
 
                 try:
                     await asyncio.wait_for(process.wait(), timeout=30)
-                except asyncio.TimeoutError:
-                    try: 
+                    if process.returncode == 0:
+                        logger.info("end")
+                except TimeoutError:
+                    try:
                         os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                         await process.wait()
                     except: pass
                 await stderr_task
                 async with AppState.process_lock:
                     if AppState.current_process == process: AppState.current_process = None
-                if process.returncode != 0 and not AppState.cancel_task: 
+                if process.returncode != 0 and not AppState.cancel_task:
                     error_msg = "".join(stderr_lines)[-3000:]
-                    raise Exception(f"FFmpeg exit {process.returncode}. Log: {error_msg}")
-                    
+                    safe_error_msg = error_msg
+                    if file_path: safe_error_msg = safe_error_msg.replace(file_path, "[REDACTED_INPUT]")
+                    if out: safe_error_msg = safe_error_msg.replace(out, "[REDACTED_OUTPUT]")
+                    if name: safe_error_msg = safe_error_msg.replace(name, "[REDACTED_FILENAME]")
+                    base_name = name.replace(" ", ".").rsplit(".", 1)[0]
+                    if base_name: safe_error_msg = safe_error_msg.replace(base_name, "[REDACTED_NAME]")
+                    stdout = f"FFmpeg exit {process.returncode}. Log: {safe_error_msg}"
+                    raise Exception(stdout)
+
             except asyncio.CancelledError:
-                if 'process' in locals() and process and process.returncode is None:
+                if "process" in locals() and process and process.returncode is None:
                     try:
                         os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                         await process.wait()
@@ -446,7 +457,7 @@ async def worker():
                 await abort_current_task(status_msg, file_path, out, chat_id=chat_id_target)
                 continue
             except Exception as e:
-                if 'process' in locals() and process and process.returncode is None:
+                if "process" in locals() and process and process.returncode is None:
                     try:
                         os.killpg(os.getpgid(process.pid), signal.SIGKILL)
                         await process.wait()
@@ -454,32 +465,32 @@ async def worker():
                 if AppState.cancel_task:
                     await abort_current_task(status_msg, file_path, out, chat_id=chat_id_target)
                     continue
-                else:
-                    await status_msg.edit(Localisation.COMPRESS_FAILED)
-                    await send_log(f"**Compression Failed, Bot is Free Now !!** \n\nProcess Done at {get_ist()}\nError: {e}")
-                    if file_path and os.path.exists(file_path): os.remove(file_path)
-                    if out and os.path.exists(out): os.remove(out)
-                    continue
+                logger.error(f"FFmpeg Compression Failed:\n{e}")
+                await status_msg.edit(Localisation.COMPRESS_FAILED)
+                await send_log(f"**Compression Failed, Bot is Free Now !!** \n\nProcess Done at {get_ist()}\nError: {e}")
+                if file_path and os.path.exists(file_path): os.remove(file_path)
+                if out and os.path.exists(out): os.remove(out)
+                continue
             finally:
-                if 'stderr_task' in locals() and not stderr_task.done():
+                if "stderr_task" in locals() and not stderr_task.done():
                     stderr_task.cancel()
-            
+
             if AppState.cancel_task:
                 await abort_current_task(status_msg, file_path, out, chat_id=chat_id_target)
                 continue
 
             AppState.task_state = TaskState.UPLOADING
             final_size = os.path.getsize(out)
-            MAX_SIZE = 3950000000 if AppState.is_premium else 1950000000 
+            MAX_SIZE = 3950000000 if AppState.is_premium else 1950000000
             files_to_upload = [out]
-            
+
             if final_size > MAX_SIZE:
                 limit_text = "3.95GB" if AppState.is_premium else "1.95GB"
                 await status_msg.edit(f"⚠️ **File Exceeds {limit_text} Limit!**\nAuto-Splitting perfectly into parts safely...")
-                
+
                 base_name, ext = os.path.splitext(out)
-                split_time = "01:00:00" 
-                
+                split_time = "01:00:00"
+
                 if duration_sec > 0:
                     safe_split_sec = max(30, int((MAX_SIZE / final_size) * duration_sec))
                     st_h, st_rem = divmod(safe_split_sec, 3600)
@@ -488,14 +499,14 @@ async def worker():
 
                 split_cmd = [
                     "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostats", "-nostdin",
-                    "-i", out, "-c", "copy", "-f", "segment", "-segment_time", split_time, 
+                    "-i", out, "-c", "copy", "-f", "segment", "-segment_time", split_time,
                     "-reset_timestamps", "1", f"{base_name}_part%03d{ext}"
                 ]
                 s_proc = await asyncio.create_subprocess_exec(
-                    *split_cmd, 
+                    *split_cmd,
                     stdin=asyncio.subprocess.DEVNULL,
-                    stdout=asyncio.subprocess.DEVNULL, 
-                    stderr=asyncio.subprocess.DEVNULL, 
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
                     start_new_session=True
                 )
                 try:
@@ -506,7 +517,7 @@ async def worker():
                         except: pass
                     raise
                 files_to_upload = sorted([f for f in os.listdir(".") if f.startswith(base_name + "_part") and f.endswith(ext)])
-                os.remove(out) 
+                os.remove(out)
 
             await send_log(f"**Uploading Video ...** \n\nProcess Started at {get_ist()}")
 
@@ -517,7 +528,7 @@ async def worker():
             else:
                 actual_thumb = None
 
-            if not actual_thumb and files_to_upload: 
+            if not actual_thumb and files_to_upload:
                 actual_thumb = await take_screen_shot(files_to_upload[0], Config.THUMB_DIR, 5)
 
             as_doc = config_data.get("AS_DOCUMENT", True)
@@ -527,14 +538,14 @@ async def worker():
                 if upload_aborted: break
                 part_size_bytes = os.path.getsize(upload_file)
                 part_size_str = humanbytes(part_size_bytes)
-                    
+
                 final_caption = f"✅ <b>{upload_file}</b>\n**Size:** {part_size_str}\n\n<b>©ᴇɴᴄᴏᴅᴇᴅ Bʏ:</b> <b>@{AppState.bot_username}</b>"
                 if len(files_to_upload) > 1: final_caption = f"**[Part {idx+1}/{len(files_to_upload)}]**\n" + final_caption
 
                 try:
                     upload_start = time.time()
                     last_up_time = [time.time()]
-                    
+
                     uploaded_msg = None
                     if as_doc:
                         uploaded_msg = await active_client.send_document(
@@ -548,7 +559,7 @@ async def worker():
                             progress=progress_bar, progress_args=("Uploading", status_msg, upload_start, last_up_time),
                             reply_parameters=ReplyParameters(message_id=msg.id)
                         )
-                        
+
                     if uploaded_msg:
                         _, new_dc_str = get_file_info(uploaded_msg)
                         updated_caption = f"✅ <b>{upload_file}</b>\n**Size:** {part_size_str}\n**Data Center:** {new_dc_str}\n\n<b>©ᴇɴᴄᴏᴅᴇᴅ Bʏ:</b> <b>@{AppState.bot_username}</b>"
@@ -569,23 +580,22 @@ async def worker():
                     if os.path.exists(upload_file): os.remove(upload_file)
 
             if upload_aborted: continue
-                
+
             await status_msg.edit("✅ Process Complete!")
-            await asyncio.sleep(3) 
-            try: await status_msg.delete() 
-            except: pass
-            
+            await asyncio.sleep(3)
+            with suppress(BaseException): await status_msg.delete()
+
             await send_log(f"**Upload Done, Bot is Free Now !!** \n\nProcess Done at {get_ist()}")
-            
-        except Exception as e: 
+
+        except Exception as e:
             logger.error(f"[WORKER CRASHED] {e}\n{traceback.format_exc()}")
-        finally: 
+        finally:
             await kill_running_process()
             if file_path and os.path.exists(file_path): os.remove(file_path)
             if out and os.path.exists(out): os.remove(out)
             for f in files_to_upload:
                 if os.path.exists(f): os.remove(f)
-            if actual_thumb and actual_thumb != custom_thumb and actual_thumb != default_thumb and os.path.exists(actual_thumb): 
+            if actual_thumb and actual_thumb not in (custom_thumb, default_thumb) and os.path.exists(actual_thumb):
                 os.remove(actual_thumb)
 
             async with AppState.state_lock:

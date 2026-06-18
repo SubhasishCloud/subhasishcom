@@ -1,5 +1,5 @@
-import os
 import json
+import os
 import shutil
 
 class Config:
@@ -13,14 +13,14 @@ class Config:
     OWNER_ID = 123456789
     LOG_CHANNEL = -100123456789
     AUTH_USERS = [123456789]
-    USER_SESSION_STRING = "" 
-    
+    USER_SESSION_STRING = ""
+
     CRF = "33.5"
     RESOLUTION = "820x480"
     AUDIO_BITRATE = "112k"
     PRESET = "fast"
     CODEC = "libx265"
-    
+
     WATERMARK_TEXT = "None"
     AS_DOCUMENT = True
 
@@ -40,15 +40,15 @@ class Config:
                 default_config = cls.get_default_config()
                 cls.save_config(default_config)
                 return default_config
-                
-        with open(cls.CONFIG_FILE, "r") as file:
+
+        with open(cls.CONFIG_FILE) as file:
             return json.load(file)
 
     @classmethod
-    def save_config(cls, config_data):
+    def save_config(cls, config_data) -> None:
         if not os.path.exists(cls.ENV_DIR):
             os.makedirs(cls.ENV_DIR)
-            
+
         with open(cls.CONFIG_FILE, "w") as file:
             json.dump(config_data, file, indent=4)
 

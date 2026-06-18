@@ -1,10 +1,15 @@
-import time, json, asyncio, psutil
-from pyrogram import filters
-from pyrogram.types import ReplyParameters
-from pyrogram.errors import MessageNotModified, FloodWait
+import asyncio
+import json
+import psutil
+import time
+
 from bot import bot_app, config_data, logger
-from bot.helper_funcs.utils import AppState, TaskState, queue, get_sys_stats, get_network_io, get_readable_time, START_TIME
 from bot.helper_funcs.display_progress import humanbytes
+from bot.helper_funcs.utils import AppState, START_TIME, TaskState, get_network_io, get_readable_time, get_sys_stats, queue
+from contextlib import suppress
+from pyrogram import filters
+from pyrogram.errors import FloodWait, MessageNotModified
+from pyrogram.types import ReplyParameters
 
 UNAUTH_MSG = "<b>You are not allowed to do that 🤭</b>"
 ACTIVE_STATUS = {}
@@ -18,14 +23,14 @@ def is_sudo(message):
     if not isinstance(auth_users, list): auth_users = [auth_users] if auth_users else []
     return user_id in auth_users or user_id == config_data.get("OWNER_ID", 0)
 
-def get_idle_text():
+def get_idle_text() -> str:
     cpu, mem, disk = get_sys_stats()
     sent, recv = get_network_io()
-    free_disk_gb = round(psutil.disk_usage('/').free / (1024**3), 2)
+    free_disk_gb = round(psutil.disk_usage("/").free / (1024**3), 2)
     uptime_str = get_readable_time((time.time() - START_TIME)*1000)
     merge_sessions_count = len(AppState.merge_sessions)
     merge_text = f"**🔄 Active Merge Sessions:** {merge_sessions_count}\n\n" if merge_sessions_count > 0 else ""
-    
+
     return (
         f"🌐 <b><u>Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs</u></b> 🌐\n\n"
         f"**Status:** Idle\n\n"
@@ -38,21 +43,19 @@ def get_idle_text():
         f"**🏷 Maintained By: @Subhasish_bot**"
     )
 
-async def auto_delete_unauth(msg):
+async def auto_delete_unauth(msg) -> None:
     await asyncio.sleep(10)
-    try: await msg.delete()
-    except Exception: pass
+    with suppress(Exception): await msg.delete()
 
 @bot_app.on_message(filters.command("status"))
-async def status_cmd(client, message):
-    if not is_sudo(message): 
+async def status_cmd(client, message) -> None:
+    if not is_sudo(message):
         unauth_msg = await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
         asyncio.create_task(auto_delete_unauth(unauth_msg))
         return
     chat_id = message.chat.id
     if chat_id in ACTIVE_STATUS:
-        try: await bot_app.delete_messages(chat_id, [ACTIVE_STATUS[chat_id]["u"], ACTIVE_STATUS[chat_id]["b"]])
-        except Exception: pass
+        with suppress(Exception): await bot_app.delete_messages(chat_id, [ACTIVE_STATUS[chat_id]["u"], ACTIVE_STATUS[chat_id]["b"]])
     if AppState.task_state != TaskState.IDLE:
         text = AppState.status_snapshot or (
             f"🌐 <b><u>Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs</u></b> 🌐\n\n"
@@ -91,7 +94,5 @@ async def status_cmd(client, message):
             except Exception as e:
                 if "MESSAGE_ID_INVALID" in str(e).upper() or "DELETED" in str(e).upper(): break
                 logger.debug(f"Status edit skipped: {e}")
-    try: await message.delete()
-    except Exception: pass
-    try: await msg.delete()
-    except Exception: pass
+    with suppress(Exception): await message.delete()
+    with suppress(Exception): await msg.delete()

@@ -1,21 +1,23 @@
-import os
-import time
-import uuid
 import asyncio
-import traceback
-import signal
+import os
 import re
-from pyrogram import filters
-from pyrogram.enums import ButtonStyle, ParseMode
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyParameters, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
-from bot import bot_app, user_app, logger, config_data
+import signal
+import time
+import traceback
+import uuid
+
+from bot import bot_app, config_data, logger, user_app
 from bot.config import Config
-from bot.helper_funcs.utils import AppState, TaskState, get_file_info, download_media_chunk, get_ist, send_log, queue
-from bot.helper_funcs.merge_utils import get_video_signature, compare_signatures, run_mkvmerge
-from bot.plugins.commands import safe_edit, safe_delete
-from bot.plugins.call_back_button_handler import safe_callback, is_sudo
 from bot.helper_funcs.display_progress import progress_bar
 from bot.helper_funcs.ffmpeg import take_screen_shot
+from bot.helper_funcs.merge_utils import compare_signatures, get_video_signature, run_mkvmerge
+from bot.helper_funcs.utils import AppState, TaskState, download_media_chunk, get_file_info, get_ist, queue, send_log
+from bot.plugins.call_back_button_handler import is_sudo, safe_callback
+from bot.plugins.commands import safe_delete, safe_edit
+from contextlib import suppress
+from pyrogram import filters
+from pyrogram.enums import ButtonStyle, ParseMode
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, ReplyParameters
 
 UNAUTH_MSG = "<b>You are not allowed to do that 🤭</b>"
 
@@ -24,23 +26,23 @@ UNAUTH_MSG = "<b>You are not allowed to do that 🤭</b>"
 # ==========================================
 def natural_sort_key(msg):
     filename = getattr(msg.video or msg.document, "file_name", "") or ""
-    return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', filename)] + [msg.id]
+    return [int(c) if c.isdigit() else c.lower() for c in re.split(r"(\d+)", filename)] + [msg.id]
 
 def get_episode_identifier(filename: str):
-    match = re.search(r'(?i)(?:s|season)\s*(\d+)\s*(?:e|ep|episode)\s*(\d+)', filename)
+    match = re.search(r"(?i)(?:s|season)\s*(\d+)\s*(?:e|ep|episode)\s*(\d+)", filename)
     if match:
         return f"S{int(match.group(1)):02d} EP{int(match.group(2)):02d}", int(match.group(2)), match.group(0)
 
-    match = re.search(r'(?i)part[\s\.]*(\d+)', filename)
+    match = re.search(r"(?i)part[\s\.]*(\d+)", filename)
     if match:
         return f"Part {int(match.group(1))}", int(match.group(1)), match.group(0)
 
-    match = re.search(r'(?i)(?:e|ep|episode)\s*(\d+)', filename)
+    match = re.search(r"(?i)(?:e|ep|episode)\s*(\d+)", filename)
     if match:
         return f"EP{int(match.group(1)):02d}", int(match.group(1)), match.group(0)
 
-    temp = re.sub(r'(19|20)\d{2}', '', filename)
-    match = re.search(r'(?<!\d)(\d{1,3})(?!\d)', temp)
+    temp = re.sub(r"(19|20)\d{2}", "", filename)
+    match = re.search(r"(?<!\d)(\d{1,3})(?!\d)", temp)
     if match:
         return f"{int(match.group(1))}", int(match.group(1)), match.group(0)
 
@@ -56,13 +58,13 @@ async def init_merge_session(client, cb):
     tid = cb.matches[0].group(1)
     chat_id = cb.message.chat.id
 
-    if not is_sudo(cb): 
+    if not is_sudo(cb):
         return await cb.answer("You are not allowed to do that 🤭", show_alert=True)
 
     async with AppState.state_lock:
         if AppState.task_state != TaskState.IDLE or not queue.empty():
             return await cb.answer("⚠️ Bot is currently busy processing other tasks. Please wait until it finishes.", show_alert=True)
-            
+
         if len(AppState.merge_sessions) > 0 and chat_id not in AppState.merge_sessions:
             return await cb.answer("⚠️ Another user is currently building a merge queue. Please wait.", show_alert=True)
         task = AppState.pending_tasks.get(tid)
@@ -73,16 +75,16 @@ async def init_merge_session(client, cb):
     await cb.answer()
     await safe_edit(cb.message, "🛠 **Merge Session Started**\nCommands are hidden. Use the Buttons Below.", reply_markup=None)
 
-    base_msg = task['msg']
+    base_msg = task["msg"]
     reply_params = ReplyParameters(message_id=base_msg.id)
     chunk_path = f"/tmp/probe_{uuid.uuid4().hex}.mkv"
 
     try:
-        active_client = user_app if user_app else bot_app
+        active_client = user_app or bot_app
         await download_media_chunk(active_client, base_msg, chunk_path, limit_bytes=15 * 1024 * 1024)
-        
+
         sig_result = await get_video_signature(chunk_path)
-        
+
         if "error" in sig_result:
             return await safe_edit(cb.message, f"❌ **Smart Detector Error:**\n`{sig_result['error']}`\n\nCannot use this file as a base for merging.")
 
@@ -94,7 +96,7 @@ async def init_merge_session(client, cb):
         ep_numbers = [ep_num] if ep_num is not None else []
         expiry_time = time.time() + 1200
         received_str = ", ".join(received_eps) if received_eps else "1"
-        
+
         text = (
             "<b>Total Videos :</b> 1\n"
             f"<b>Total Size:</b> {round(size_bytes/(1024*1024), 2)} MB\n"
@@ -116,13 +118,13 @@ async def init_merge_session(client, cb):
             "ep_numbers": ep_numbers
         }
 
-        async def auto_delete_init_msg():
+        async def auto_delete_init_msg() -> None:
             await asyncio.sleep(5)
             await safe_delete(cb.message)
         asyncio.create_task(auto_delete_init_msg())
 
-        async def auto_expire_session():
-            await asyncio.sleep(1200) 
+        async def auto_expire_session() -> None:
+            await asyncio.sleep(1200)
             if chat_id in AppState.merge_sessions:
                 session = AppState.merge_sessions.pop(chat_id, None)
                 if session:
@@ -139,20 +141,19 @@ async def init_merge_session(client, cb):
         await safe_edit(cb.message, f"❌ **Error initializing merge:** `{e}`")
     finally:
         if os.path.exists(chunk_path):
-            try: os.remove(chunk_path)
-            except: pass
+            with suppress(BaseException): os.remove(chunk_path)
 
-async def handle_merge_input(client, message):
+async def handle_merge_input(client, message) -> None:
     chat_id = message.chat.id
     session = AppState.merge_sessions.get(chat_id)
     if not session:
         return
 
-    base_msg = session['videos'][0]
+    base_msg = session["videos"][0]
     reply_params = ReplyParameters(message_id=base_msg.id)
 
     temp_msg = await bot_app.send_message(
-        chat_id, 
+        chat_id,
         "⏳ **Smart Detector Active:** Probing new video signature...",
         reply_parameters=ReplyParameters(message_id=message.id)
     )
@@ -167,20 +168,20 @@ async def handle_merge_input(client, message):
         # ==========================================
         if ep_id and ep_id in session["received_eps"]:
             await safe_edit(temp_msg, f"⚠️ **Duplicate Detected!**\n\nYou already sent `{ep_id}`. This file has been ignored.")
-            async def auto_delete_dup():
+            async def auto_delete_dup() -> None:
                 await asyncio.sleep(5)
                 await safe_delete(temp_msg)
                 await safe_delete(message)
             asyncio.create_task(auto_delete_dup())
             return
 
-        active_client = user_app if user_app else bot_app
+        active_client = user_app or bot_app
         await download_media_chunk(active_client, message, chunk_path, limit_bytes=15 * 1024 * 1024)
         new_sig_result = await get_video_signature(chunk_path)
 
         if "error" in new_sig_result:
             await safe_edit(temp_msg, f"❌ **Smart Detector Error:**\n`{new_sig_result['error']}`\n\nThis video was rejected.")
-            async def auto_delete_err():
+            async def auto_delete_err() -> None:
                 await asyncio.sleep(5)
                 await safe_delete(temp_msg)
                 await safe_delete(message)
@@ -189,10 +190,10 @@ async def handle_merge_input(client, message):
 
         new_signature = new_sig_result["signature"]
         is_compatible, reason = compare_signatures(session["base_signature"], new_signature)
-        
+
         if not is_compatible:
             await safe_edit(temp_msg, f"❌ **Incompatible Video Detected!**\n\n**Reason:** `{reason}`\n\nThis video was rejected.")
-            async def auto_delete_incompatible():
+            async def auto_delete_incompatible() -> None:
                 await asyncio.sleep(5)
                 await safe_delete(temp_msg)
                 await safe_delete(message)
@@ -210,13 +211,13 @@ async def handle_merge_input(client, message):
 
         await safe_delete(temp_msg)
         await safe_delete(session["status_msg"])
-        
+
         rem_sec = int(session["expiry_time"] - time.time())
-        if rem_sec < 0: rem_sec = 0
+        rem_sec = max(rem_sec, 0)
         mins, secs = divmod(rem_sec, 60)
-        
+
         received_str = ", ".join(session["received_eps"]) if session["received_eps"] else ", ".join([str(i+1) for i in range(total_videos)])
-        
+
         text = (
             f"<b>Total Videos :</b> {total_videos}\n"
             f"<b>Total Size:</b> {total_size_mb} MB\n"
@@ -234,19 +235,18 @@ async def handle_merge_input(client, message):
         await safe_edit(temp_msg, f"❌ **Error processing video:** `{e}`")
     finally:
         if os.path.exists(chunk_path):
-            try: os.remove(chunk_path)
-            except: pass
+            with suppress(BaseException): os.remove(chunk_path)
 
 # ==========================================
 # 🛑 REPLY KEYBOARD HANDLER
 # ==========================================
 @bot_app.on_message(filters.text & filters.regex(r"^❌ ᴄᴀɴᴄᴇʟ ❌$"))
-async def reply_kbd_cancel(client, message):
+async def reply_kbd_cancel(client, message) -> None:
     chat_id = message.chat.id
 
-    if not is_sudo(message): 
+    if not is_sudo(message):
         unauth_msg = await bot_app.send_message(chat_id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
-        async def auto_delete_unauth():
+        async def auto_delete_unauth() -> None:
             await asyncio.sleep(10)
             await safe_delete(unauth_msg)
             await safe_delete(message)
@@ -262,19 +262,19 @@ async def reply_kbd_cancel(client, message):
         for msg in session["videos"]:
             await safe_delete(msg)
 
-    async def auto_delete_cancel():
+    async def auto_delete_cancel() -> None:
         await asyncio.sleep(5)
         await safe_delete(cancel_msg)
         await safe_delete(message)
     asyncio.create_task(auto_delete_cancel())
 
 @bot_app.on_message(filters.text & filters.regex(r"^🎬 ᴍᴇʀɢᴇ ᴠɪᴅᴇᴏs 🎬$"))
-async def execute_merge_text(client, message):
+async def execute_merge_text(client, message) -> None:
     chat_id = message.chat.id
 
-    if not is_sudo(message): 
+    if not is_sudo(message):
         unauth_msg = await bot_app.send_message(chat_id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
-        async def auto_delete_unauth():
+        async def auto_delete_unauth() -> None:
             await asyncio.sleep(10)
             await safe_delete(unauth_msg)
             await safe_delete(message)
@@ -300,7 +300,7 @@ async def execute_merge_text(client, message):
     status_msg = None
     downloaded_files = []
     files_to_upload = []
-    active_client = user_app if user_app else bot_app
+    active_client = user_app or bot_app
     videos = sorted(session["videos"], key=natural_sort_key)
     reply_to_message_id = videos[0].id
     reply_params = ReplyParameters(message_id=reply_to_message_id)
@@ -323,7 +323,7 @@ async def execute_merge_text(client, message):
         # 📥 DOWNLOAD PHASE
         # ==========================================
         for idx, msg in enumerate(videos):
-            if AppState.cancel_task: raise asyncio.CancelledError()
+            if AppState.cancel_task: raise asyncio.CancelledError
             AppState.active_file_name = getattr(msg.video or msg.document, "file_name", f"Video_{idx+1}.mkv")
             start_time = time.time()
             last_up = [time.time()]
@@ -346,17 +346,18 @@ async def execute_merge_text(client, message):
             )
 
             if not file_path or not os.path.exists(file_path):
-                raise Exception(f"Failed to download video {idx+1}")
-                
+                dl_err = f"Failed to download video {idx+1}"
+                raise Exception(dl_err)
+
             downloaded_files.append(file_path)
-            
+
         await send_log(f"**Download Stopped, Bot is Free Now !!** \n\nProcess Done at {get_ist()}")
 
         # ==========================================
         # 💡 MERGE PHASE
         # ==========================================
-        if AppState.cancel_task: raise asyncio.CancelledError()
-        
+        if AppState.cancel_task: raise asyncio.CancelledError
+
         await send_log(f"**Merging Video ...** \n\nProcess Started at {get_ist()}")
         # COMPLETENESS CHECK & FILENAME CONSTRUCTION
         ep_numbers = session["ep_numbers"]
@@ -380,29 +381,30 @@ async def execute_merge_text(client, message):
         else:
             clean_name = last_name
 
-        clean_name = re.sub(r'\[.*?\]', '', clean_name.rsplit('.', 1)[0]).replace("_", " ")
-        space_name = re.sub(r'\s+', ' ', clean_name).strip()
+        clean_name = re.sub(r"\[.*?\]", "", clean_name.rsplit(".", 1)[0]).replace("_", " ")
+        space_name = re.sub(r"\s+", " ", clean_name).strip()
         full_mkv_title = f"{space_name} {tag}"
         clean_name = clean_name.replace("-", "")
-        clean_name = re.sub(r'\s+', '.', clean_name)
-        clean_name = re.sub(r'\.+', '.', clean_name).strip('.')
+        clean_name = re.sub(r"\s+", ".", clean_name)
+        clean_name = re.sub(r"\.+", ".", clean_name).strip(".")
         max_allowed_length = 60 - len(tag) - 5
 
         if len(clean_name) > max_allowed_length:
-            clean_name = clean_name[:max_allowed_length].rstrip('.')
+            clean_name = clean_name[:max_allowed_length].rstrip(".")
         final_filename = f"{clean_name}.{tag}.mkv"
         output_path = os.path.join("/tmp", final_filename)
         cancel_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 Cancel Task", callback_data="cancel_running", style=ButtonStyle.DANGER)]])
         merge_success = await run_mkvmerge(downloaded_files, output_path, status_msg, cancel_markup, title=full_mkv_title)
-        
+
         if not merge_success or not os.path.exists(output_path):
-            raise Exception("mkvmerge failed to produce the output file.")
+            mux_err = "mkvmerge failed to produce the output file."
+            raise Exception(mux_err)
 
         # ==========================================
         # ✂️ AUTO-SPLIT PHASE
         # ==========================================
-        if AppState.cancel_task: raise asyncio.CancelledError()
-        
+        if AppState.cancel_task: raise asyncio.CancelledError
+
         duration_sec = 0
         try:
             probe = await asyncio.create_subprocess_exec(
@@ -414,18 +416,18 @@ async def execute_merge_text(client, message):
             duration_sec = int(float(probe_stdout.decode().strip()))
         except: pass
 
-        duration_str = time.strftime('%H:%M:%S', time.gmtime(duration_sec))
+        duration_str = time.strftime("%H:%M:%S", time.gmtime(duration_sec))
         final_size_bytes = os.path.getsize(output_path)
-        
-        MAX_SIZE = 3950000000 if AppState.is_premium else 1950000000 
+
+        MAX_SIZE = 3950000000 if AppState.is_premium else 1950000000
         files_to_upload = [output_path]
 
         if final_size_bytes > MAX_SIZE:
             limit_text = "3.95GB" if AppState.is_premium else "1.95GB"
             await safe_edit(status_msg, f"⚠️ **File Exceeds {limit_text} Limit!**\nAuto-Splitting perfectly into parts safely...")
-            
+
             base_name_no_ext, ext = os.path.splitext(output_path)
-            split_time = "01:00:00" 
+            split_time = "01:00:00"
 
             if duration_sec > 0:
                 safe_split_sec = max(30, int((MAX_SIZE / final_size_bytes) * duration_sec))
@@ -435,15 +437,15 @@ async def execute_merge_text(client, message):
 
             split_cmd = [
                 "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostats", "-nostdin",
-                "-i", output_path, "-c", "copy", "-f", "segment", "-segment_time", split_time, 
+                "-i", output_path, "-c", "copy", "-f", "segment", "-segment_time", split_time,
                 "-reset_timestamps", "1", f"{base_name_no_ext}_part%03d{ext}"
             ]
 
             s_proc = await asyncio.create_subprocess_exec(
-                *split_cmd, 
+                *split_cmd,
                 stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.DEVNULL, 
-                stderr=asyncio.subprocess.DEVNULL, 
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
                 start_new_session=True
             )
             try:
@@ -453,7 +455,7 @@ async def execute_merge_text(client, message):
                     try: os.killpg(os.getpgid(s_proc.pid), signal.SIGKILL); await s_proc.wait()
                     except: pass
                 raise
-                
+
             files_to_upload = sorted([os.path.join("/tmp", f) for f in os.listdir("/tmp") if f.startswith(os.path.basename(base_name_no_ext) + "_part") and f.endswith(ext)])
             os.remove(output_path)
 
@@ -461,12 +463,12 @@ async def execute_merge_text(client, message):
         # 📤 UPLOAD PHASE
         # ==========================================
         await send_log(f"**Uploading Video ...** \n\nProcess Started at {get_ist()}")
-        
+
         user_id = message.from_user.id
         custom_thumb = os.path.join(Config.THUMB_DIR, f"{user_id}.jpg")
         default_thumb = os.path.join(Config.ENV_DIR, "thumb.jpg")
         actual_thumb = custom_thumb if os.path.exists(custom_thumb) else (default_thumb if os.path.exists(default_thumb) else None)
-        
+
         if not actual_thumb and files_to_upload:
             actual_thumb = await take_screen_shot(files_to_upload[0], Config.THUMB_DIR, 5)
 
@@ -475,25 +477,25 @@ async def execute_merge_text(client, message):
 
         for idx, upload_file in enumerate(files_to_upload):
             if upload_aborted: break
-            
+
             part_size_bytes = os.path.getsize(upload_file)
             part_size_mb = round(part_size_bytes / (1024 * 1024), 2)
             base_upload_name = os.path.basename(upload_file)
             # --- 1. CAPTION DISPLAY FORMATTING (Uncut & Spaced) ---
-            part_match = re.search(r'_part(\d+)', base_upload_name, flags=re.IGNORECASE)
+            part_match = re.search(r"_part(\d+)", base_upload_name, flags=re.IGNORECASE)
             # Dynamically format the part number for the caption if split
             part_str = f" - Part {int(part_match.group(1))}" if part_match else ""
             display_name = f"{full_mkv_title}{part_str}.mkv"
             # --- 2. TELEGRAM API FORMATTING (Strict 60-Char Limit) ---
             # Convert any underscores from the auto-splitter into dots
             file_name_safe = base_upload_name.replace("_", ".")
-            file_name_safe = re.sub(r'\.+', '.', file_name_safe)
+            file_name_safe = re.sub(r"\.+", ".", file_name_safe)
             # Bulletproof limit: If the auto-splitter added length that exceeds 60 chars
             if len(file_name_safe) > 60:
                 # We dynamically shrink the base title but keep the ".part001.mkv" intact
                 ext_str = f".part{part_match.group(1)}.mkv" if part_match else ".mkv"
                 allowed_base_len = 60 - len(ext_str)
-                safe_base = file_name_safe.split('.part')[0] if part_match else file_name_safe.rsplit('.mkv')[0]
+                safe_base = file_name_safe.split(".part")[0] if part_match else file_name_safe.rsplit(".mkv")[0]
                 file_name_safe = f"{safe_base[:allowed_base_len].rstrip('.')}{ext_str}"
 
             caption = (
@@ -511,11 +513,11 @@ async def execute_merge_text(client, message):
             try:
                 upload_start = time.time()
                 last_up_time = [time.time()]
-                
+
                 if as_doc:
                     uploaded_msg = await active_client.send_document(
                         chat_id=chat_id, document=upload_file, thumb=actual_thumb, caption=caption, force_document=True,
-                        file_name=file_name_safe, 
+                        file_name=file_name_safe,
                         progress=progress_bar, progress_args=("Uploading", status_msg, upload_start, last_up_time),
                         parse_mode=ParseMode.HTML,
                         reply_parameters=reply_params
@@ -523,7 +525,7 @@ async def execute_merge_text(client, message):
                 else:
                     uploaded_msg = await active_client.send_video(
                         chat_id=chat_id, video=upload_file, thumb=actual_thumb, caption=caption,
-                        file_name=file_name_safe, 
+                        file_name=file_name_safe,
                         progress=progress_bar, progress_args=("Uploading", status_msg, upload_start, last_up_time),
                         parse_mode=ParseMode.HTML,
                         reply_parameters=reply_params
@@ -540,11 +542,10 @@ async def execute_merge_text(client, message):
             except Exception as e:
                 if AppState.cancel_task or "Cancelled" in str(e) or "400" in str(e):
                     upload_aborted = True
-                    raise asyncio.CancelledError()
-                else:
-                    logger.error(f"Upload Error on part {idx+1}: {e}")
-                    if status_msg:
-                        await safe_edit(status_msg, f"⚠️ **Upload Failed on Part {idx+1}:**\n`{e}`")
+                    raise asyncio.CancelledError
+                logger.error(f"Upload Error on part {idx+1}: {e}")
+                if status_msg:
+                    await safe_edit(status_msg, f"⚠️ **Upload Failed on Part {idx+1}:**\n`{e}`")
             finally:
                 if os.path.exists(upload_file): os.remove(upload_file)
 
@@ -576,11 +577,11 @@ async def execute_merge_text(client, message):
     finally:
         for f in downloaded_files:
             if os.path.exists(f): os.remove(f)
-        if 'output_path' in locals() and os.path.exists(output_path):
+        if "output_path" in locals() and os.path.exists(output_path):
             os.remove(output_path)
         for f in files_to_upload:
             if os.path.exists(f): os.remove(f)
-        if 'actual_thumb' in locals() and actual_thumb and actual_thumb not in [custom_thumb, default_thumb] and os.path.exists(actual_thumb):
+        if "actual_thumb" in locals() and actual_thumb and actual_thumb not in [custom_thumb, default_thumb] and os.path.exists(actual_thumb):
             os.remove(actual_thumb)
 
         async with AppState.state_lock:

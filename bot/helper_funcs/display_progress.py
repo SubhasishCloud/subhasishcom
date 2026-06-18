@@ -1,27 +1,26 @@
-import time
-import os
-import math
 import asyncio
 import psutil
-from pyrogram.enums import ButtonStyle
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from bot.helper_funcs.utils import AppState, get_sys_stats, START_TIME, get_readable_time
+import time
 
-def humanbytes(size):
+from bot.helper_funcs.utils import AppState, get_readable_time, get_sys_stats, START_TIME
+from pyrogram.enums import ButtonStyle
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+def humanbytes(size) -> str:
     if not size: return "0 B"
-    for unit in ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z']:
+    for unit in ["", "K", "M", "G", "T", "P", "E", "Z"]:
         if size < 1024.0:
-            return "%3.2f %sB" % (size, unit)
+            return f"{size:3.2f} {unit}B"
         size /= 1024.0
-    return "%.2f PB" % (size)
+    return f"{size:.2f} PB"
 
 def compact_time(seconds: float) -> str:
     seconds = int(seconds)
     hours, remainder = divmod(seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
     if hours > 0: return f"{hours:02d}h{minutes:02d}m{seconds:02d}s"
-    elif minutes > 0: return f"{minutes:02d}m{seconds:02d}s"
-    else: return f"{seconds:02d}s"
+    if minutes > 0: return f"{minutes:02d}m{seconds:02d}s"
+    return f"{seconds:02d}s"
 
 def time_formatter(milliseconds: int) -> str:
     return compact_time(milliseconds / 1000)
@@ -30,15 +29,15 @@ def make_bar(percent):
     done = int(percent / 100 * 10)
     return "▣" * done + "□" * (10 - done)
 
-def render_active_status(percent, done_str, total_str, eta_str, speed_str, elapsed_str, display_status=None):
+def render_active_status(percent, done_str, total_str, eta_str, speed_str, elapsed_str, display_status=None) -> str:
     cpu, mem, disk = get_sys_stats()
-    free_disk_gb = round(psutil.disk_usage('/').free / (1024**3), 2)
+    free_disk_gb = round(psutil.disk_usage("/").free / (1024**3), 2)
     uptime_str = get_readable_time((time.time() - START_TIME) * 1000)
     net = psutil.net_io_counters()
-    
-    status_text = display_status if display_status else AppState.task_state
-    
-    text = (
+
+    status_text = display_status or AppState.task_state
+
+    return (
         f"🌐 <b><u>Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs</u></b> 🌐\n\n"
         f"`{AppState.active_file_name}`\n"
         f"[{make_bar(percent)}] {percent:.2f}%\n"
@@ -51,11 +50,11 @@ def render_active_status(percent, done_str, total_str, eta_str, speed_str, elaps
         f"**Ram:** {mem}% | **Uptime:** {uptime_str}\n\n"
         f"**🏷 Maintained By: @Subhasish_bot**"
     )
-    return text
 
-async def progress_bar(current, total, status_text, message, start_time, last_update_time):
+async def progress_bar(current, total, status_text, message, start_time, last_update_time) -> None:
     if AppState.cancel_task:
-        raise asyncio.CancelledError("Task Cancelled by User")
+        msg = "Task Cancelled by User"
+        raise asyncio.CancelledError(msg)
 
     now = time.time()
     if (now - last_update_time[0]) >= 3.5 or current == total:
@@ -64,13 +63,13 @@ async def progress_bar(current, total, status_text, message, start_time, last_up
         elapsed = max(now - start_time, 0.001)
         speed = current / elapsed
         eta_ms = round((safe_total - current) / speed) * 1000 if speed > 0 else 0
-        
-        cpu, mem, disk = get_sys_stats()
-        
+
+        cpu, mem, _disk = get_sys_stats()
+
         if "Downloading" in status_text: header = "📥 Downloading ... 📥"
         elif "Uploading" in status_text: header = "📤 Uploading ... 📤"
         else: header = "💡 ENCODING...💡"
-        
+
         done_str = humanbytes(current)
         total_str = humanbytes(total)
         speed_str = humanbytes(speed)
@@ -88,9 +87,9 @@ async def progress_bar(current, total, status_text, message, start_time, last_up
             f"⏱️ **ᴇᴛᴀ:** {eta_str}\n"
             f"🖥 CPU: {cpu}% | 💽 RAM: {mem}%"
         )
-        
+
         btn = InlineKeyboardMarkup([[InlineKeyboardButton("🛑 Cancel Task", callback_data="cancel_running", style=ButtonStyle.DANGER)]])
-        
+
         try:
             await message.edit(text, reply_markup=btn)
             last_update_time[0] = now

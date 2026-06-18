@@ -1,8 +1,8 @@
-subhasishenv/*
-__pycache__/
-*.py[cod]
+*.avi
 *.mkv
 *.mp4
-*.avi
+*.py[cod]
 *.ts
 *.webm
+__pycache__/
+subhasishenv/*

@@ -1,8 +1,9 @@
 import logging
-from logging.handlers import RotatingFileHandler
 import os
-from pyrogram import Client
+
 from bot.config import Config
+from logging.handlers import RotatingFileHandler
+from pyrogram import Client
 
 config_data = Config.load_config()
 os.makedirs(Config.THUMB_DIR, exist_ok=True)
@@ -12,8 +13,8 @@ logging.basicConfig(
     format="%(asctime)s - [%(levelname)s] - %(message)s",
     handlers=[
         RotatingFileHandler(
-            os.path.join(Config.ENV_DIR, "bot.log"), 
-            maxBytes=20000000, 
+            os.path.join(Config.ENV_DIR, "bot.log"),
+            maxBytes=20000000,
             backupCount=5
         ),
         logging.StreamHandler()

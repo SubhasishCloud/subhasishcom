@@ -1,16 +1,16 @@
 {
-  "API_ID": 1234567,
   "API_HASH": "your_api_hash_here",
-  "TG_BOT_TOKEN": "your_bot_token_here",
-  "OWNER_ID": 123456789,
+  "API_ID": 1234567,
+  "AS_DOCUMENT": true,
+  "AUDIO_BITRATE": "96k",
   "AUTH_USERS": [987654321, 1122334455],
-  "LOG_CHANNEL": -1001234567890,
-  "USER_SESSION_STRING": "your_pyrogram_string_session_here",
+  "CODEC": "libx265",
   "CRF": "38",
+  "LOG_CHANNEL": -1001234567890,
+  "OWNER_ID": 123456789,
   "PRESET": "fast",
   "RESOLUTION": "820x480",
-  "AUDIO_BITRATE": "96k",
-  "CODEC": "libx265",
-  "WATERMARK_TEXT": "None",
-  "AS_DOCUMENT": true
+  "TG_BOT_TOKEN": "your_bot_token_here",
+  "USER_SESSION_STRING": "your_pyrogram_string_session_here",
+  "WATERMARK_TEXT": "None"
 }

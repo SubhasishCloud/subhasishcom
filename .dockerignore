@@ -1,5 +1,5 @@
+*.py[cod]
 .git
 .gitignore
-subhasishenv/*
 __pycache__/
-*.py[cod]
+subhasishenv/*
