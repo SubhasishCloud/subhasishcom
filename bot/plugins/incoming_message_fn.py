@@ -1,14 +1,13 @@
 import json
 
-from bot import bot_app, config_data
-from bot.helper_funcs.utils import AppState, get_file_info, queue
 from contextlib import suppress
 from pyrogram import filters
 from pyrogram.enums import ButtonStyle, ChatType
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyParameters
 
-UNAUTH_MSG = "<b>You are not allowed to do that 🤭</b>"
-QUEUE_MSG = "<b>Added To Queue... 🚦</b>\n<b>Please Be Patient, Your Compression Will Start Soon... 😊</b>"
+from .. import bot_app, config_data
+from ..helper_funcs.utils import AppState, get_file_info, queue
+from ..shared.localisation import Localisation
 
 def is_sudo(message):
     user_id = message.from_user.id if message.from_user else 0
@@ -29,12 +28,12 @@ async def incoming_media(client, message):
         if message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
             return await bot_app.send_message(
                 message.chat.id,
-                UNAUTH_MSG,
+                Localisation.UNAUTH_MSG,
                 reply_parameters=ReplyParameters(message_id=message.id)
             )
         return await bot_app.send_message(
             message.chat.id,
-            UNAUTH_MSG,
+            Localisation.UNAUTH_MSG,
             reply_parameters=ReplyParameters(message_id=message.id)
         )
 
@@ -69,7 +68,7 @@ async def incoming_media(client, message):
                 )
     # 🛑 MERGE INTERCEPTOR
     if message.chat.id in AppState.merge_sessions:
-        from bot.plugins.merge_handler import handle_merge_input
+        from .merge_handler import handle_merge_input
         return await handle_merge_input(client, message)
 
     file_name = getattr(media, "file_name", "video.mkv")
@@ -143,7 +142,7 @@ async def index_receiver(client, message):
 
             new_status_msg = await bot_app.send_message(
                 chat_id,
-                QUEUE_MSG,
+                Localisation.QUEUE_MSG,
                 reply_parameters=ReplyParameters(message_id=task["msg"].id)
             )
             await queue.put((task["msg"], task["name"], map_args, new_status_msg))

@@ -21,6 +21,7 @@ Built with advanced FFmpeg integration, `kurigram` MTProto architecture, and a b
 * ✂️ **Smart Auto-Splitter:** Safely segments files that exceed Telegram's size limits without losing video quality.
 * 🖥️ **Live Hardware Telemetry:** Monitor your Server's CPU, RAM & Network I/O directly in your Telegram chat (`/status`).
 * 🏷️ **Custom Watermarking:** Burn your own custom text natively into your compressed videos.
+* 📊 **Advanced System Telemetry:** Instantly fetch OS, Python, FFmpeg, Git versions & full `pip freeze` package list via Telegra.ph integration (`/version` or `/v`).
 * 📦 **Always Up-To-Date:** The Dockerfile automatically pulls the absolute latest stable versions of Python, FFmpeg, Git, MediaInfo and everything else to guarantee maximum performance, speed, and security.
 
 ---
@@ -250,6 +251,7 @@ sudo docker images
 ```text
 start - Start The Bot 🤖
 ping - Check Bot's Up Time & Last Updated Status. ⏰
+version - Check System, Python, FFmpeg & Packages. 📊
 status - Check the active compression, queue, and server Hardware
 clear - Clear Your Queued Tasks 🔫
 help - For Getting Help 🤔

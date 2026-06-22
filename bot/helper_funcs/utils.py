@@ -5,10 +5,11 @@ import re
 import signal
 import time
 
-from bot import bot_app, config_data, logger
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from pyrogram.file_id import FileId
+
+from .. import bot_app, config_data, logger
 
 queue = asyncio.Queue()
 START_TIME = time.time()

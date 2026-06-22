@@ -1,9 +1,10 @@
 import logging
 import os
 
-from bot.config import Config
 from logging.handlers import RotatingFileHandler
 from pyrogram import Client
+
+from .core.config import Config
 
 config_data = Config.load_config()
 os.makedirs(Config.THUMB_DIR, exist_ok=True)

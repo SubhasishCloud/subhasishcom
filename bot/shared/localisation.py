@@ -11,9 +11,11 @@ class Localisation:
     CANCEL_PROMPT = "<b>Are You Sure? 🚫 This Will Stop The Current Compression..!!🙁</b>"
     NO_ACTIVE_TASK = "⚠️ No active compression task running right now."
     QUEUE_CLEARED = "✅ <b>Successfully Cleared Queue...</b>"
+    QUEUE_MSG = "<b>Added To Queue... 🚦</b>\n<b>Please Be Patient, Your Compression Will Start Soon... 😊</b>"
     THUMB_ADDED = "✅ <b>Thumbnail Added.</b>"
     THUMB_REMOVED = "✅ <b>Thumbnail Removed.</b>"
     THUMB_WARNING = "⚠️ Your existing thumbnail will be deleted. Are you sure?"
+    UNAUTH_MSG = "<b>You are not allowed to do that 🤭</b>"
 
     # --- GENERAL TEXTS ---
     HELP_TEXT = "🤖 <b><u>Bot Help & Basic Commands:</u></b>\n\n<b><i>Send me any video file (up to 4GB) and I will automatically compress it into a highly optimized HEVC format.</i></b>\n\n<b><u>Basic Commands:</u></b>\n• /status - Check the current compression queue & Server Hardware\n• /ping - Check my uptime and latency\n• /setthumbnail - Reply to an image to set a custom cover\n• /delthumbnail - Safely delete your custom thumbnail"
@@ -35,3 +37,7 @@ class Localisation:
     DOWNLOADED_SUCCESS = "✅ <b>Downloaded Successfully.</b>\n⏱ <b>Time Taken:</b> {}"
     DOWNLOAD_START = "ℹ️ <b>sᴛᴀᴛᴜs:</b> 📥 <b>Downloading ...</b> 📥 \n"
     UPLOAD_START = "ℹ️ <b>sᴛᴀᴛᴜs:</b> 📤 <b>Uploading ...</b> 📤 \n"
+
+    # --- VERSION CMD TEXTS ---
+    VERSION_FAILED = "❌ <b>Failed To Fetch Sys Info.</b> ❌"
+    VERSION_FETCHING = "♻️ <b>Fetching Sys Info.</b> ♻️\n🫣 <i>Please Wait...!!</i> 🫠"

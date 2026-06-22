@@ -1,34 +1,16 @@
 import asyncio
 import httpx
-import importlib
 import json
 import os
-from bot import bot_app, logger, user_app
-from bot.config import Config
-from bot.helper_funcs.ffmpeg import worker
-from bot.helper_funcs.utils import AppState, cpu_monitor
+
 from contextlib import suppress
 from pyrogram import idle
-# ===================================================================== #
-# IMPORTANT: Handles registering all Pyrogram handlers for Telegram     #
-# ===================================================================== #
-def load_all_plugins() -> None:
-    plugins = (
-        "bot.plugins.call_back_button_handler",
-        "bot.plugins.commands",
-        "bot.plugins.incoming_message_fn",
-        "bot.plugins.merge_handler",
-        "bot.plugins.status_message_fn"
-    )
 
-    logger.debug("Loading %d Plugins...", len(plugins))
-
-    for p in plugins:
-        try:
-            importlib.import_module(p); logger.debug("Successfully Loaded Plugin: %s", p)
-        except Exception: logger.exception("FATAL: Failed to load plugin: %s", p); raise
-
-    logger.info("🎉 ᴀʟʟ %d ᴘʟᴜɢɪɴs ʟᴏᴀᴅᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ. 🎉", len(plugins))
+from . import bot_app, logger, user_app
+from .core.config import Config
+from .core.startup import starter
+from .helper_funcs.ffmpeg import worker
+from .helper_funcs.utils import AppState, cpu_monitor
 
 async def fetch_default_thumbnail() -> None:
     thumb_url = "https://telegra.ph/file/5c4635e173e7407694a63.jpg"
@@ -125,7 +107,7 @@ async def main() -> None:
 
 if __name__ == "__main__":
     try:
-        load_all_plugins()
+        starter()
         loop = asyncio.get_event_loop()
         loop.run_until_complete(main())
     except KeyboardInterrupt: logger.info("Bot stopped by user.")

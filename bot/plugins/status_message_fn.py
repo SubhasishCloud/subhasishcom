@@ -3,15 +3,16 @@ import json
 import psutil
 import time
 
-from bot import bot_app, config_data, logger
-from bot.helper_funcs.display_progress import humanbytes
-from bot.helper_funcs.utils import AppState, START_TIME, TaskState, get_network_io, get_readable_time, get_sys_stats, queue
 from contextlib import suppress
 from pyrogram import filters
 from pyrogram.errors import FloodWait, MessageNotModified
 from pyrogram.types import ReplyParameters
 
-UNAUTH_MSG = "<b>You are not allowed to do that 🤭</b>"
+from .. import bot_app, config_data, logger
+from ..helper_funcs.display_progress import humanbytes
+from ..helper_funcs.utils import AppState, START_TIME, TaskState, get_network_io, get_readable_time, get_sys_stats, queue
+from ..shared.localisation import Localisation
+
 ACTIVE_STATUS = {}
 
 def is_sudo(message):
@@ -50,7 +51,7 @@ async def auto_delete_unauth(msg) -> None:
 @bot_app.on_message(filters.command("status"))
 async def status_cmd(client, message) -> None:
     if not is_sudo(message):
-        unauth_msg = await bot_app.send_message(message.chat.id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
+        unauth_msg = await bot_app.send_message(message.chat.id, Localisation.UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
         asyncio.create_task(auto_delete_unauth(unauth_msg))
         return
     chat_id = message.chat.id

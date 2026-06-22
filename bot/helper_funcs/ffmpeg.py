@@ -6,21 +6,17 @@ import socket
 import time
 import traceback
 
-from bot import bot_app, config_data, logger, user_app
-from bot.config import Config
-from bot.helper_funcs.display_progress import humanbytes, make_bar, progress_bar, render_active_status, time_formatter
-from bot.helper_funcs.utils import AppState, TaskState, delete_message_later, get_file_info, get_ist, get_sys_stats, kill_running_process, queue, send_log
-from bot.localisation import Localisation
 from contextlib import suppress
 from datetime import UTC, datetime
 from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, ReplyParameters
 
-async def safe_readline(stream, timeout=10):
-    try:
-        return await asyncio.wait_for(stream.readline(), timeout=timeout)
-    except TimeoutError:
-        return None
+from .. import bot_app, config_data, logger, user_app
+from ..core.config import Config
+from ..shared.common import safe_readline
+from ..shared.localisation import Localisation
+from .display_progress import humanbytes, make_bar, progress_bar, render_active_status, time_formatter
+from .utils import AppState, TaskState, delete_message_later, get_file_info, get_ist, get_sys_stats, kill_running_process, queue, send_log
 
 async def abort_current_task(status_msg=None, file_path=None, out=None, chat_id=None) -> None:
     await kill_running_process()

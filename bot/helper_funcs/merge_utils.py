@@ -6,17 +6,13 @@ import signal
 import time
 import traceback
 
-from bot import bot_app, logger
-from bot.helper_funcs.display_progress import humanbytes, make_bar, render_active_status, time_formatter
-from bot.helper_funcs.utils import AppState, get_sys_stats, kill_running_process
 from contextlib import suppress
 from pyrogram.errors import FloodWait, MessageNotModified
 
-async def safe_readline(stream, timeout=10):
-    try:
-        return await asyncio.wait_for(stream.readline(), timeout=timeout)
-    except TimeoutError:
-        return None
+from .. import bot_app, logger
+from ..shared.common import safe_readline
+from .display_progress import humanbytes, make_bar, render_active_status, time_formatter
+from .utils import AppState, get_sys_stats, kill_running_process
 
 async def get_video_signature(file_path: str) -> dict:
     """Scans a video file using ffprobe and returns a 'signature' of its streams.

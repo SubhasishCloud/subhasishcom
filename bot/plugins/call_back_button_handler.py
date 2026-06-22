@@ -4,37 +4,17 @@ import os
 import signal
 import uuid
 
-from bot import bot_app, config_data, logger, user_app
-from bot.config import Config
-from bot.helper_funcs.download import get_graph_link
-from bot.helper_funcs.utils import AppState, TaskState, download_media_chunk, format_mediainfo_output, get_file_info, kill_running_process, queue
-from bot.localisation import Localisation
 from functools import wraps
 from pyrogram import filters
 from pyrogram.enums import ButtonStyle
 from pyrogram.types import ForceReply, InlineKeyboardButton, InlineKeyboardMarkup, ReplyParameters
 
-QUEUE_MSG = "<b>Added To Queue... 🚦</b>\n<b>Please Be Patient, Your Compression Will Start Soon... 😊</b>"
-UNAUTH_MSG = "<b>You are not allowed to do that 🤭</b>"
-
-def get_bsetting_menu():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("API_ID", callback_data="bsetting_select_API_ID", style=ButtonStyle.PRIMARY),
-         InlineKeyboardButton("API_HASH", callback_data="bsetting_select_API_HASH", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("TG_BOT_TOKEN", callback_data="bsetting_select_TG_BOT_TOKEN", style=ButtonStyle.PRIMARY),
-         InlineKeyboardButton("OWNER_ID", callback_data="bsetting_select_OWNER_ID", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("LOG_CHANNEL", callback_data="bsetting_select_LOG_CHANNEL", style=ButtonStyle.PRIMARY),
-         InlineKeyboardButton("AUTH_USERS", callback_data="bsetting_select_AUTH_USERS", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("USER_SESSION_STRING", callback_data="bsetting_select_USER_SESSION_STRING", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("CRF", callback_data="bsetting_select_CRF", style=ButtonStyle.PRIMARY),
-         InlineKeyboardButton("PRESET", callback_data="bsetting_select_PRESET", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("RESOLUTION", callback_data="bsetting_select_RESOLUTION", style=ButtonStyle.PRIMARY),
-         InlineKeyboardButton("AUDIO_BITRATE", callback_data="bsetting_select_AUDIO_BITRATE", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("CODEC", callback_data="bsetting_select_CODEC", style=ButtonStyle.PRIMARY),
-         InlineKeyboardButton("WATERMARK", callback_data="bsetting_select_WATERMARK_TEXT", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("AS_DOCUMENT", callback_data="bsetting_toggle_AS_DOCUMENT", style=ButtonStyle.PRIMARY)],
-        [InlineKeyboardButton("❌ Close", callback_data="bsetting_close", style=ButtonStyle.DANGER)]
-    ])
+from .. import bot_app, config_data, logger, user_app
+from ..core.config import Config
+from ..helper_funcs.download import get_graph_link
+from ..helper_funcs.utils import AppState, TaskState, download_media_chunk, format_mediainfo_output, get_file_info, kill_running_process, queue
+from ..shared.common import get_bsetting_menu, safe_delete, safe_delete_by_id, safe_edit, spawn_temporary_task
+from ..shared.localisation import Localisation
 
 def is_sudo(cb):
     user_id = cb.from_user.id if cb.from_user else 0
@@ -49,7 +29,6 @@ def is_sudo(cb):
 def safe_callback(func):
     @wraps(func)
     async def wrapper(client, cb):
-        from bot.plugins.commands import safe_edit
         answered = False
         original_answer = cb.answer
 
@@ -84,8 +63,6 @@ def safe_callback(func):
 @bot_app.on_callback_query(filters.regex(r"^panel_(close|info|back|all|select|input)_(.+)$"))
 @safe_callback
 async def panel_handler(client, cb):
-    from bot.plugins.commands import safe_edit, safe_delete, spawn_temporary_task
-
     action = cb.matches[0].group(1)
     tid = cb.matches[0].group(2)
 
@@ -97,7 +74,7 @@ async def panel_handler(client, cb):
         return None
 
     if action == "close":
-        if not is_sudo(cb): return await cb.answer(UNAUTH_MSG, show_alert=True)
+        if not is_sudo(cb): return await cb.answer(Localisation.UNAUTH_MSG, show_alert=True)
         await cb.answer()
         async with AppState.state_lock:
             AppState.pending_tasks.pop(tid, None)
@@ -161,10 +138,10 @@ async def panel_handler(client, cb):
         await safe_edit(cb.message, "👇 Choose an action:", reply_markup=btn)
 
     elif action == "all":
-        if not is_sudo(cb): return await cb.answer(UNAUTH_MSG, show_alert=True)
+        if not is_sudo(cb): return await cb.answer(Localisation.UNAUTH_MSG, show_alert=True)
         await cb.answer("Added to queue!", show_alert=False)
-        try: new_status_msg = await bot_app.send_message(cb.message.chat.id, QUEUE_MSG, reply_parameters=ReplyParameters(message_id=task["msg"].id))
-        except Exception as e: logger.debug(f"Reply fallback triggered: {e}"); new_status_msg = await bot_app.send_message(cb.message.chat.id, QUEUE_MSG)
+        try: new_status_msg = await bot_app.send_message(cb.message.chat.id, Localisation.QUEUE_MSG, reply_parameters=ReplyParameters(message_id=task["msg"].id))
+        except Exception as e: logger.debug(f"Reply fallback triggered: {e}"); new_status_msg = await bot_app.send_message(cb.message.chat.id, Localisation.QUEUE_MSG)
         try: await queue.put((task["msg"], task.get("name", "video.mp4"), ["-map", "0:v:0", "-map", "0:a?", "-map", "0:s?"], new_status_msg))
         finally:
             async with AppState.state_lock: AppState.pending_tasks.pop(tid, None)
@@ -201,7 +178,7 @@ async def panel_handler(client, cb):
 
     elif action == "input":
         if not cb.from_user: return await cb.answer("⚠️ Anonymous admins are not supported for stream selection.", show_alert=True)
-        if not is_sudo(cb): return await cb.answer(UNAUTH_MSG, show_alert=True)
+        if not is_sudo(cb): return await cb.answer(Localisation.UNAUTH_MSG, show_alert=True)
         await cb.answer()
 
         prompt = await bot_app.send_message(
@@ -220,7 +197,6 @@ async def panel_handler(client, cb):
             async with AppState.state_lock:
                 if AppState.awaiting_index.get(state_key, {}).get("tid") == tid:
                     AppState.awaiting_index.pop(state_key, None)
-            from bot.plugins.commands import safe_delete
             await safe_delete(prompt, log_context="Timeout input prompt")
 
         spawn_temporary_task(auto_clear_state(), max_timeout=360)
@@ -229,10 +205,9 @@ async def panel_handler(client, cb):
 @bot_app.on_callback_query(filters.regex(r"^bsetting_(.*)"))
 @safe_callback
 async def bsetting_cb(client, cb):
-    from bot.plugins.commands import safe_edit, safe_delete_by_id, safe_delete
     if not cb.from_user: return await cb.answer("⚠️ Anonymous admins cannot edit settings.", show_alert=True)
     user_id = cb.from_user.id
-    if user_id != config_data.get("OWNER_ID", 0): return await cb.answer(UNAUTH_MSG, show_alert=True)
+    if user_id != config_data.get("OWNER_ID", 0): return await cb.answer(Localisation.UNAUTH_MSG, show_alert=True)
     action = cb.matches[0].group(1)
 
     if action == "remove":
@@ -323,7 +298,6 @@ async def bsetting_cb(client, cb):
         if msg_to_delete:
             await safe_delete_by_id(client, cb.message.chat.id, msg_to_delete, log_context="Bsetting old msg")
         if action == "close":
-            from bot.plugins.commands import safe_delete
             await safe_delete(cb.message, log_context="Bsetting close msg")
             if cb.message.reply_to_message: await safe_delete(cb.message.reply_to_message, log_context="Bsetting close reply msg")
             return None
@@ -338,8 +312,7 @@ async def bsetting_cb(client, cb):
 @bot_app.on_callback_query(filters.regex("cancel_running"))
 @safe_callback
 async def cancel_running_cb(client, cb):
-    from bot.plugins.commands import safe_delete, spawn_temporary_task
-    if not is_sudo(cb): return await cb.answer(UNAUTH_MSG, show_alert=True)
+    if not is_sudo(cb): return await cb.answer(Localisation.UNAUTH_MSG, show_alert=True)
     if AppState.task_state == TaskState.IDLE: return await cb.answer("No active task.", show_alert=True)
     await cb.answer()
     btn = InlineKeyboardMarkup([[InlineKeyboardButton("Yes ✅", callback_data="confirm_cancel_yes", style=ButtonStyle.SUCCESS), InlineKeyboardButton("No ❌", callback_data="confirm_cancel_no", style=ButtonStyle.DANGER)]])
@@ -362,8 +335,7 @@ async def cancel_running_cb(client, cb):
 @bot_app.on_callback_query(filters.regex(r"^confirm_cancel_(.*)"))
 @safe_callback
 async def confirm_cancel_cb(client, cb):
-    from bot.plugins.commands import safe_edit, safe_delete
-    if not is_sudo(cb): return await cb.answer(UNAUTH_MSG, show_alert=True)
+    if not is_sudo(cb): return await cb.answer(Localisation.UNAUTH_MSG, show_alert=True)
     action = cb.matches[0].group(1)
     if action == "yes":
         if AppState.task_state == TaskState.CANCELLING: return await cb.answer("⚠️ Cancellation already in progress...", show_alert=True)
@@ -382,10 +354,9 @@ async def confirm_cancel_cb(client, cb):
 @bot_app.on_callback_query(filters.regex(r"^delthumb_(.*)"))
 @safe_callback
 async def delthumb_cb(client, cb):
-    from bot.plugins.commands import safe_edit, safe_delete
     if not cb.from_user: return await cb.answer("⚠️ Anonymous admins cannot delete thumbnails.", show_alert=True)
     user_id = cb.from_user.id
-    if user_id != config_data.get("OWNER_ID", 0): return await cb.answer(UNAUTH_MSG, show_alert=True)
+    if user_id != config_data.get("OWNER_ID", 0): return await cb.answer(Localisation.UNAUTH_MSG, show_alert=True)
     action = cb.matches[0].group(1)
     await cb.answer()
     if action == "yes":

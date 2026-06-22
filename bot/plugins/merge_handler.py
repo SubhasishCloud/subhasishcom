@@ -6,23 +6,23 @@ import time
 import traceback
 import uuid
 
-from bot import bot_app, config_data, logger, user_app
-from bot.config import Config
-from bot.helper_funcs.display_progress import progress_bar
-from bot.helper_funcs.ffmpeg import take_screen_shot
-from bot.helper_funcs.merge_utils import compare_signatures, get_video_signature, run_mkvmerge
-from bot.helper_funcs.utils import AppState, TaskState, download_media_chunk, get_file_info, get_ist, queue, send_log
-from bot.plugins.call_back_button_handler import is_sudo, safe_callback
-from bot.plugins.commands import safe_delete, safe_edit
 from contextlib import suppress
 from pyrogram import filters
 from pyrogram.enums import ButtonStyle, ParseMode
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, ReplyParameters
 
-UNAUTH_MSG = "<b>You are not allowed to do that 🤭</b>"
+from .. import bot_app, config_data, logger, user_app
+from ..core.config import Config
+from ..helper_funcs.display_progress import progress_bar
+from ..helper_funcs.ffmpeg import take_screen_shot
+from ..helper_funcs.merge_utils import compare_signatures, get_video_signature, run_mkvmerge
+from ..helper_funcs.utils import AppState, TaskState, download_media_chunk, get_file_info, get_ist, queue, send_log
+from ..shared.common import safe_delete, safe_edit
+from ..shared.localisation import Localisation
+from .call_back_button_handler import is_sudo, safe_callback
 
 # ==========================================
-# 🧠 SMART FILENAME PARSERS
+# ♻️ SMART FILENAME PARSERS
 # ==========================================
 def natural_sort_key(msg):
     filename = getattr(msg.video or msg.document, "file_name", "") or ""
@@ -59,7 +59,7 @@ async def init_merge_session(client, cb):
     chat_id = cb.message.chat.id
 
     if not is_sudo(cb):
-        return await cb.answer("You are not allowed to do that 🤭", show_alert=True)
+        return await cb.answer(Localisation.UNAUTH_MSG, show_alert=True)
 
     async with AppState.state_lock:
         if AppState.task_state != TaskState.IDLE or not queue.empty():
@@ -245,7 +245,7 @@ async def reply_kbd_cancel(client, message) -> None:
     chat_id = message.chat.id
 
     if not is_sudo(message):
-        unauth_msg = await bot_app.send_message(chat_id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
+        unauth_msg = await bot_app.send_message(chat_id, Localisation.UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
         async def auto_delete_unauth() -> None:
             await asyncio.sleep(10)
             await safe_delete(unauth_msg)
@@ -273,7 +273,7 @@ async def execute_merge_text(client, message) -> None:
     chat_id = message.chat.id
 
     if not is_sudo(message):
-        unauth_msg = await bot_app.send_message(chat_id, UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
+        unauth_msg = await bot_app.send_message(chat_id, Localisation.UNAUTH_MSG, reply_parameters=ReplyParameters(message_id=message.id))
         async def auto_delete_unauth() -> None:
             await asyncio.sleep(10)
             await safe_delete(unauth_msg)

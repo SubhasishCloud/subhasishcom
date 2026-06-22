@@ -2,9 +2,10 @@ import asyncio
 import psutil
 import time
 
-from bot.helper_funcs.utils import AppState, get_readable_time, get_sys_stats, START_TIME
 from pyrogram.enums import ButtonStyle
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+from .utils import AppState, START_TIME, get_readable_time, get_sys_stats
 
 def humanbytes(size) -> str:
     if not size: return "0 B"
