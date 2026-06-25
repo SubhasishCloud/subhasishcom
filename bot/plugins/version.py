@@ -57,6 +57,17 @@ async def version_cmd(client, message) -> None:
                     mi_ver = f"v{mi_match.group(1)}" if mi_match else mi_raw.split("\n")[-1].split("-")[-1].strip()
             except Exception as e: logger.error(f"Failed To Generate MediaInfo Version: {e}")
 
+            # --- Advanced Regex: MKVToolNix Version ---
+            mkv_ver = "Unknown"
+            try:
+                proc_mkv = await asyncio.create_subprocess_exec("mkvmerge", "--version", stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
+                stdout_mkv, _ = await asyncio.wait_for(proc_mkv.communicate(), timeout=5)
+                if stdout_mkv:
+                    mkv_raw = stdout_mkv.decode().strip()
+                    mkv_match = re.search(r"(v[\d\.]+)\s+\('([^']+)'\)", mkv_raw)
+                    mkv_ver = f"{mkv_match.group(1)} ({mkv_match.group(2)})" if mkv_match else mkv_raw.replace("mkvmerge ", "").replace("'", "")
+            except Exception as e: logger.error(f"Failed To Generate MKVToolNix Version: {e}")
+
             # --- Advanced Regex: Git Version ---
             git_ver = "Unknown"
             try:
@@ -99,6 +110,7 @@ async def version_cmd(client, message) -> None:
                 f"🐍 <i><b>Python ➝</b></i> <code>{py_ver}</code>\n"
                 f"🎬 <i><b>FFmpeg ➝</b></i> <code>{ffmpeg_ver}</code>\n"
                 f"🔍 <i><b>MediaInfo ➝</b></i> <code>{mi_ver}</code>\n"
+                f"🧩 <i><b>MKVToolNix ➝</b></i> <code>{mkv_ver}</code>\n"
                 f"⚙️ <i><b>Git ➝</b></i> <code>{git_ver}</code>\n\n"
                 f"🌳 <b>GITHUB REPOSITORY:</b> 🌳\n"
                 f"🌟 <b><u>Last Updated:</u></b> 🌟\n"
